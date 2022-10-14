@@ -506,4 +506,4 @@ def get_rabbitmq_version(communicator: 'RmqThreadCommunicator'):
     :return: :class:`packaging.version.Version`
     """
     from packaging.version import parse
-    return parse(communicator.server_properties['version'].decode('utf-8'))
+    return parse(communicator.server_properties['version'])

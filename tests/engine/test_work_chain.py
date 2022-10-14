@@ -1738,7 +1738,7 @@ class TestDefaultUniqueness:
             super().define(spec)
             spec.input('a', valid_type=Bool, default=lambda: Bool(True))
 
-        def step(self):
+        def step(self):  # pylint: disable=invalid-overridden-method
             pass
 
     def test_unique_default_inputs(self):
