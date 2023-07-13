@@ -9,8 +9,12 @@
 ###########################################################################
 # pylint: disable=cyclic-import
 """AiiDA manager for global settings"""
+import asyncio
+from concurrent import futures
 import functools
 from typing import TYPE_CHECKING, Any, Optional, Union
+
+from aiida.common.log import AIIDA_LOGGER
 
 if TYPE_CHECKING:
     import asyncio
@@ -75,6 +79,7 @@ class Manager:  # pylint: disable=too-many-public-methods
         self._process_controller: Optional['RemoteProcessThreadController'] = None
         self._persister: Optional['AiiDAPersister'] = None
         self._runner: Optional['Runner'] = None
+        self.logger = AIIDA_LOGGER.getChild(__name__)
 
     @staticmethod
     def get_config(create=False) -> 'Config':
@@ -164,7 +169,10 @@ class Manager:  # pylint: disable=too-many-public-methods
     def reset_communicator(self) -> None:
         """Reset the communicator."""
         if self._communicator is not None:
-            self._communicator.close()
+            try:
+                self._communicator.close()
+            except futures.TimeoutError as exception:
+                self.logger.warning(f'Call to close the communicator timed out: {exception}')
         self._communicator = None
         self._process_controller = None
 
