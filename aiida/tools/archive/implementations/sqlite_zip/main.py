@@ -45,7 +45,7 @@ class ArchiveFormatSqlZip(ArchiveFormatAbstract):
 
     @property
     def key_format(self) -> str:
-        return 'sha256'
+        return self._key_format
 
     @overload
     def open(
@@ -88,8 +88,13 @@ class ArchiveFormatSqlZip(ArchiveFormatAbstract):
         compression: int = 6,
         **kwargs: Any
     ) -> Union[ArchiveReaderSqlZip, ArchiveWriterSqlZip, ArchiveAppenderSqlZip]:
+        self._key_format = kwargs.pop('key_format', 'sha256')
         if mode == 'r':
-            return ArchiveReaderSqlZip(path, **kwargs)
+            reader = ArchiveReaderSqlZip(path, **kwargs)
+            metadata = reader.get_metadata()
+            if 'key_format' in metadata:
+                self._key_format = metadata['key_format']
+            return reader
         if mode == 'a':
             return ArchiveAppenderSqlZip(path, self, mode=mode, compression=compression, **kwargs)
         return ArchiveWriterSqlZip(path, self, mode=mode, compression=compression, **kwargs)

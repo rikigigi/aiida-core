@@ -152,6 +152,8 @@ def create_archive(
     # check the backend
     backend = backend or get_manager().get_profile_storage()
     type_check(backend, StorageBackend)
+    # get the key_format of the repository
+    key_format = backend.get_repository().key_format
     # create a function to get a query builder instance for the backend
     querybuilder = lambda: orm.QueryBuilder(backend=backend)
 
@@ -271,13 +273,15 @@ def create_archive(
 
     EXPORT_LOGGER.report(f'Creating archive with:\n{tabulate(count_summary)}')
 
+
     # Create and open the archive for writing.
     # We create in a temp dir then move to final place at end,
     # so that the user cannot end up with a half written archive on errors
     with tempfile.TemporaryDirectory() as tmpdir:
         tmp_filename = Path(tmpdir) / 'export.zip'
-        with archive_format.open(tmp_filename, mode='x', compression=compression) as writer:
+        with archive_format.open(tmp_filename, mode='x', compression=compression, key_format=key_format) as writer:
             # add metadata
+            print(writer._metadata)
             writer.update_metadata({
                 'ctime': datetime.now().isoformat(),
                 'creation_parameters': {
