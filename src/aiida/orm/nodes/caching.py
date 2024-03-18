@@ -61,6 +61,13 @@ class NodeCaching:
 
     def get_objects_to_hash(self) -> dict[str, t.Any]:
         """Return a list of objects which should be included in the hash."""
+        top_level_module = self._node.__module__.split('.', 1)[0]
+
+        try:
+            from importlib.metadata import version, packages_distributions
+            version = version(packages_distributions()[top_level_module][0])
+        except (ImportError, AttributeError, KeyError,IndexError) as exc:
+            raise exceptions.HashingError("The node's package version could not be determined") from exc
 
         return {
             'class': str(self._node.__class__),
