@@ -65,8 +65,9 @@ class NodeCaching:
         top_level_module = self._node.__module__.split('.', 1)[0]
 
         try:
-            version = importlib.import_module(top_level_module).__version__
-        except (ImportError, AttributeError) as exc:
+            from importlib.metadata import version, packages_distributions
+            version = version(packages_distributions()[top_level_module][0])
+        except (ImportError, AttributeError, KeyError,IndexError) as exc:
             raise exceptions.HashingError("The node's package version could not be determined") from exc
 
         return {
