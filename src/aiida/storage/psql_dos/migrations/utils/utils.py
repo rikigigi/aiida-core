@@ -97,6 +97,12 @@ class NoopRepositoryBackend(AbstractRepositoryBackend):
     def key_format(self) -> Optional[str]:
         return None
 
+    
+    @property
+    def archive_format(self) -> str | None:
+        """Return the format of the archive."""
+        return None
+
     def initialise(self, **kwargs) -> None:
         raise NotImplementedError()
 
@@ -107,7 +113,7 @@ class NoopRepositoryBackend(AbstractRepositoryBackend):
     def erase(self):
         raise NotImplementedError()
 
-    def _put_object_from_filelike(self, handle: io.BufferedIOBase) -> str:
+    def _put_object_from_filelike(self, handle: io.BufferedIOBase, key : str | None = None) -> str:
         return LazyOpener(handle.name)
 
     def has_objects(self, keys: List[str]) -> List[bool]:

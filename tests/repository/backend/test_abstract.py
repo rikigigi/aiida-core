@@ -14,6 +14,11 @@ class RepositoryBackend(AbstractRepositoryBackend):
     @property
     def key_format(self) -> Optional[str]:
         return None
+    
+    @property
+    def archive_format(self) -> str | None:
+        """Return the format of the archive."""
+        return None
 
     @property
     def uuid(self) -> Optional[str]:
@@ -29,7 +34,7 @@ class RepositoryBackend(AbstractRepositoryBackend):
     def is_initialised(self) -> bool:
         return True
 
-    def _put_object_from_filelike(self, handle: BinaryIO) -> str:
+    def _put_object_from_filelike(self, handle: BinaryIO, key : str | None = None) -> str:
         return 'key'
 
     def delete_objects(self, keys: List[str]) -> None:

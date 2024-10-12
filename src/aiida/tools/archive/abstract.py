@@ -189,6 +189,10 @@ class ArchiveFormatAbstract(ABC):
     @abstractmethod
     def key_format(self) -> str:
         """Return the format of repository keys."""
+        
+    @property
+    def maintain_keys(self) -> bool:
+        return False
 
     @abstractmethod
     def read_version(self, path: Union[str, Path]) -> str:

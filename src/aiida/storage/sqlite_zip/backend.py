@@ -336,6 +336,13 @@ class _RoBackendRepository(AbstractRepositoryBackend):
     @property
     def key_format(self) -> Optional[str]:
         return 'sha256'
+    
+        
+    @property
+    def archive_format(self) -> str | None:
+        """Return the format of the archive."""
+        return super().archive_format
+
 
     def initialise(self, **kwargs) -> None:
         pass

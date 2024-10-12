@@ -170,11 +170,13 @@ def create(
     You can modify some of those rules using options of this command.
     """
     from aiida.common.progress_reporter import set_progress_bar_tqdm, set_progress_reporter
-    from aiida.tools.archive.abstract import get_format
+    from aiida.manage import get_manager
     from aiida.tools.archive.create import create_archive
     from aiida.tools.archive.exceptions import ArchiveExportError
-
-    archive_format = get_format()
+    
+    backend = get_manager().get_profile_storage()
+    
+    archive_format = backend.get_repository().archive_format
 
     if test_run:
         echo.echo_deprecated('the `--test-run` option is deprecated. Use `-n/--dry-run` option instead')
@@ -219,7 +221,7 @@ def create(
         set_progress_reporter(None)
 
     try:
-        create_archive(entities, filename=output_file, archive_format=archive_format, **kwargs)
+        create_archive(entities, filename=output_file, archive_format=archive_format, backend=backend, **kwargs)
     except ArchiveExportError as exception:
         echo.echo_critical(f'failed to write the archive file: {exception}')
     else:
@@ -245,7 +247,7 @@ def create(
 def migrate(input_file, output_file, force, in_place, version):
     """Migrate an archive to a more recent schema version."""
     from aiida.common.progress_reporter import set_progress_bar_tqdm, set_progress_reporter
-    from aiida.tools.archive.abstract import get_format
+    from aiida.manage import get_manager
 
     if in_place:
         if output_file:
@@ -262,7 +264,8 @@ def migrate(input_file, output_file, force, in_place, version):
     else:
         set_progress_reporter(None)
 
-    archive_format = get_format()
+    backend = get_manager().get_profile_storage()
+    archive_format = backend.get_repository().archive_format
 
     if version is None:
         version = archive_format.latest_version
@@ -479,10 +482,13 @@ def _import_archive_and_migrate(
     import urllib.request
 
     from aiida.common.folders import SandboxFolder
-    from aiida.tools.archive.abstract import get_format
+    import aiida.orm
+    from aiida.manage import get_manager
     from aiida.tools.archive.imports import import_archive as _import_archive
 
-    archive_format = get_format()
+    backend = get_manager().get_profile_storage()
+    archive_format = backend.get_repository().archive_format
+
     filepath = ctx.obj['config'].get_option('storage.sandbox') or None
 
     with SandboxFolder(filepath=filepath) as temp_folder:
@@ -501,7 +507,7 @@ def _import_archive_and_migrate(
 
         echo.echo_report(f'starting import: {archive}')
         try:
-            _import_archive(archive_path, archive_format=archive_format, **import_kwargs)
+            _import_archive(archive_path, archive_format=archive_format,  backend=backend, **import_kwargs)
         except IncompatibleStorageSchema as exception:
             if try_migration:
                 echo.echo_report(f'incompatible version detected for {archive}, trying migration')
@@ -514,7 +520,7 @@ def _import_archive_and_migrate(
 
                 echo.echo_report('proceeding with import of migrated archive')
                 try:
-                    _import_archive(archive_path, archive_format=archive_format, **import_kwargs)
+                    _import_archive(archive_path, archive_format=archive_format, backend=backend,  **import_kwargs)
                 except Exception as sub_exception:
                     _echo_exception(
                         f'an exception occurred while trying to import the migrated archive {archive}', sub_exception
