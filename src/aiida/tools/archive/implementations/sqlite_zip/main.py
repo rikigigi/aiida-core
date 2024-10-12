@@ -18,7 +18,7 @@ from aiida.tools.archive.abstract import ArchiveFormatAbstract
 from .reader import ArchiveReaderSqlZip
 from .writer import ArchiveAppenderSqlZip, ArchiveWriterSqlZip
 
-__all__ = ('ArchiveFormatSqlZip',)
+__all__ = ('ArchiveFormatSqlZip', 'ArchiveFormatSqlUUIDZip')
 
 
 class ArchiveFormatSqlZip(ArchiveFormatAbstract):
@@ -47,6 +47,10 @@ class ArchiveFormatSqlZip(ArchiveFormatAbstract):
     def key_format(self) -> str:
         return 'sha256'
 
+    @property
+    def maintain_keys(self) -> bool:
+        return False
+    
     @overload
     def open(
         self, path: Union[str, Path], mode: Literal['r'], *, compression: int = 6, **kwargs: Any
@@ -85,3 +89,27 @@ class ArchiveFormatSqlZip(ArchiveFormatAbstract):
         :param path: archive path
         """
         return migrate(inpath, outpath, version, force=force, compression=compression)
+
+
+class ArchiveFormatSqlUUIDZip(ArchiveFormatSqlZip):
+    """Archive format, which uses a zip file, containing an SQLite database.
+
+    The content of the zip file is::
+
+        |- archive.zip
+            |- metadata.json
+            |- db.sqlite3
+            |- repo/
+                |- uuid
+
+    Repository files are named by their UUID.
+
+    """
+
+    @property
+    def key_format(self) -> str:
+        return 'uuid4'
+    
+    @property
+    def maintain_keys(self) -> bool:
+        return True

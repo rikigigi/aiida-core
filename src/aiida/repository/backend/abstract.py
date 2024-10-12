@@ -11,7 +11,6 @@ import hashlib
 import io
 import pathlib
 from typing import BinaryIO, Iterable, Iterator, List, Optional, Tuple, Union
-
 from aiida.common.hashing import chunked_file_hash
 
 __all__ = ('AbstractRepositoryBackend',)
@@ -42,6 +41,17 @@ class AbstractRepositoryBackend(metaclass=abc.ABCMeta):
         necessary to re-compute all the `Node.base.repository.metadata` before importing (otherwise they will not match
         with the repository).
         """
+    
+    @property
+    @abc.abstractmethod
+    def archive_format(self) :
+        """Return the format for the archive of exported repository.
+        """
+        from aiida.tools.archive.implementations.sqlite_zip import ArchiveFormatSqlZip, ArchiveFormatSqlUUIDZip
+        
+        if self.key_format == 'uuid4':
+            return ArchiveFormatSqlUUIDZip()
+        return ArchiveFormatSqlZip()
 
     @abc.abstractmethod
     def initialise(self, **kwargs) -> None:
@@ -68,7 +78,7 @@ class AbstractRepositoryBackend(metaclass=abc.ABCMeta):
     def is_readable_byte_stream(handle) -> bool:
         return hasattr(handle, 'read') and hasattr(handle, 'mode') and 'b' in handle.mode
 
-    def put_object_from_filelike(self, handle: BinaryIO) -> str:
+    def put_object_from_filelike(self, handle: BinaryIO, key : str | None = None) -> str:
         """Store the byte contents of a file in the repository.
 
         :param handle: filelike object with the byte content to be stored.
@@ -80,10 +90,10 @@ class AbstractRepositoryBackend(metaclass=abc.ABCMeta):
             and not self.is_readable_byte_stream(handle)
         ):
             raise TypeError(f'handle does not seem to be a byte stream: {type(handle)}.')
-        return self._put_object_from_filelike(handle)
+        return self._put_object_from_filelike(handle, key)
 
     @abc.abstractmethod
-    def _put_object_from_filelike(self, handle: BinaryIO) -> str:
+    def _put_object_from_filelike(self, handle: BinaryIO, key : str | None = None) -> str:
         pass
 
     def put_object_from_file(self, filepath: Union[str, pathlib.Path]) -> str:

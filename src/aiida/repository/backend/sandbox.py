@@ -49,6 +49,12 @@ class SandboxRepositoryBackend(AbstractRepositoryBackend):
     def key_format(self) -> str | None:
         return 'uuid4'
 
+    
+    @property
+    def archive_format(self) -> str | None:
+        """Return the format of the archive."""
+        return super().archive_format
+
     def initialise(self, **kwargs) -> None:
         """Initialise the repository if it hasn't already been initialised.
 
@@ -80,13 +86,14 @@ class SandboxRepositoryBackend(AbstractRepositoryBackend):
             finally:
                 self._sandbox = None
 
-    def _put_object_from_filelike(self, handle: t.BinaryIO) -> str:
+    def _put_object_from_filelike(self, handle: t.BinaryIO, key : str | None = None) -> str:
         """Store the byte contents of a file in the repository.
 
         :param handle: filelike object with the byte content to be stored.
         :return: the generated fully qualified identifier for the object within the repository.
         :raises TypeError: if the handle is not a byte stream.
         """
+       
         key = str(uuid.uuid4())
         filepath = os.path.join(self.sandbox.abspath, key)
 
