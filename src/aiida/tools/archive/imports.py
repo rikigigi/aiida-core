@@ -98,9 +98,9 @@ def import_archive(
     :raises `~aiida.tools.archive.exceptions.ImportValidationError`: if invalid entities are found in the archive.
     :raises `~aiida.tools.archive.exceptions.ImportUniquenessError`: if a new unique entity can not be created.
     """
-    archive_format = archive_format or ArchiveFormatSqlZip()
+
     type_check(path, (str, Path))
-    type_check(archive_format, ArchiveFormatAbstract)
+
     type_check(batch_size, int)
     type_check(import_new_extras, bool)
     type_check(merge_extras, tuple)
@@ -112,8 +112,9 @@ def import_archive(
         raise ValueError(f'merge_comments not in {("leave", "newest", "overwrite")!r}')
     type_check(group, orm.Group, allow_none=True)
     type_check(test_run, bool)
-    backend = backend or get_manager().get_profile_storage()
     type_check(backend, StorageBackend)
+    type_check(archive_format, ArchiveFormatAbstract)
+    query_params = QueryParams(batch_size=batch_size, filter_size=filter_size)
 
     if group and not group.is_stored:
         group.store()
@@ -1184,11 +1185,11 @@ def _get_new_object_keys(
     batch_size: int,
 ) -> Set[str]:
     """Return the object keys that need to be added to the backend."""
-    archive_hashkeys: Set[str] = set()
+    archive_keys: Set[str] = set()
     query = QueryBuilder(backend=backend_from).append(orm.Node, project='repository_metadata')
     with get_progress_reporter()(desc='Collecting archive Node file keys', total=query.count()) as progress:
-        for (repository_metadata,) in query.iterall(batch_size=batch_size):
-            archive_hashkeys.update(key for key in Repository.flatten(repository_metadata).values() if key is not None)
+        for (repository_metadata,) in query.iterall(batch_size=query_params.batch_size):
+            archive_keys.update(key for key in Repository.flatten(repository_metadata).values() if key is not None)
             progress.update()
 
     IMPORT_LOGGER.report('Checking keys against repository ...')
@@ -1198,15 +1199,15 @@ def _get_new_object_keys(
         raise NotImplementedError(
             f'Backend repository key format incompatible: {repository.key_format!r} != {key_format!r}'
         )
-    new_hashkeys = archive_hashkeys.difference(repository.list_objects())
+    new_keys = archive_keys.difference(repository.list_objects())
 
-    existing_count = len(archive_hashkeys) - len(new_hashkeys)
+    existing_count = len(archive_keys) - len(new_keys)
     if existing_count:
         IMPORT_LOGGER.report(f'Skipping {existing_count} existing repository files')
-    if new_hashkeys:
-        IMPORT_LOGGER.report(f'Adding {len(new_hashkeys)} new repository files')
+    if new_keys:
+        IMPORT_LOGGER.report(f'Adding {len(new_keys)} new repository files')
 
-    return new_hashkeys
+    return new_keys
 
 
 def _add_files_to_repo(backend_from: StorageBackend, backend_to: StorageBackend, new_keys: Set[str]) -> None:
@@ -1216,9 +1217,13 @@ def _add_files_to_repo(backend_from: StorageBackend, backend_to: StorageBackend,
 
     repository_to = backend_to.get_repository()
     repository_from = backend_from.get_repository()
+    IMPORT_LOGGER.report(f'Archive format: {repository_to.archive_format}')
     with get_progress_reporter()(desc='Adding archive files to repository', total=len(new_keys)) as progress:
-        for key, handle in repository_from.iter_object_streams(new_keys):
-            backend_key = repository_to.put_object_from_filelike(handle)
+        for key, handle in repository_from.iter_object_streams(new_keys):  # type: ignore[arg-type]
+            if repository_to.archive_format.maintain_keys:
+                backend_key = repository_to.put_object_from_filelike(handle, key=key)
+            else:
+                backend_key = repository_to.put_object_from_filelike(handle)
             if backend_key != key:
                 raise ImportValidationError(
                     f'Archive repository key is different to backend key: {key!r} != {backend_key!r}'
