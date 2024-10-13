@@ -29,7 +29,7 @@ from aiida.repository import Repository
 from .abstract import ArchiveFormatAbstract
 from .common import batch_iter, entity_type_to_orm
 from .exceptions import ImportTestRun, ImportUniquenessError, ImportValidationError
-from .implementations.sqlite_zip import ArchiveFormatSqlZip
+from .conversion import convert_archive_key_format
 
 __all__ = ('IMPORT_LOGGER', 'import_archive')
 
@@ -71,6 +71,7 @@ def import_archive(
     group: Optional[orm.Group] = None,
     test_run: bool = False,
     backend: Optional[StorageBackend] = None,
+    remove_converted_archive: bool = True
 ) -> Optional[int]:
     """Import an archive into the AiiDA backend.
 
@@ -98,7 +99,7 @@ def import_archive(
         If None, one will be auto-generated.
     :param test_run: if True, do not write to file
     :param backend: the backend to import to. If not specified, the default backend is used.
-
+    :param remove_converted_archive: If true and a converted archive is generated it is removed at the end of the import
     :returns: Primary Key of the import Group
 
     :raises `~aiida.common.exceptions.CorruptStorage`: if the provided archive cannot be read.
@@ -160,6 +161,11 @@ def import_archive(
 
     with archive_format.open(path, mode='r') as reader:
         backend_from = reader.get_backend()
+        converted_archive_path = convert_archive_key_format(backend_from.get_repository().archive_format.key_format, backend.get_repository().archive_format.key_format, path, test_run)
+    
+    
+    with archive_format.open(converted_archive_path, mode='r') as reader:
+        backend_from = reader.get_backend()
 
         # To ensure we do not corrupt the backend database on a faulty import,
         # Every addition/update is made in a single transaction, which is commited on exit
@@ -204,6 +210,11 @@ def import_archive(
 
             IMPORT_LOGGER.report('Committing transaction to database...')
 
+    if remove_converted_archive and (converted_archive_path is not path):
+        IMPORT_LOGGER.report("Cleaning up")
+        import os
+        os.remove(converted_archive_path)
+        
     return import_group_id
 
 
