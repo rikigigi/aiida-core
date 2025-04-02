@@ -387,7 +387,7 @@ class Utils:
         :return: a Flask response object
         """
         from flask import current_app
-        
+
         ## Type checks
         # mandatory parameters
         if not isinstance(data, dict):
@@ -403,13 +403,13 @@ class Utils:
         if headers is not None and not isinstance(headers, dict):
             raise InputValidationError('header must be a dictionary')
 
-        # Build response
-        response = jsonify(data)
-        response.status_code = status
-
         if not current_app.debug:
             for key in DEBUG_RESPONSE_ATTRIBUTES:
                 data.pop(key, None)
+
+        # Build response
+        response = jsonify(data)
+        response.status_code = status
 
         if headers is not None:
             for key, val in headers.items():
