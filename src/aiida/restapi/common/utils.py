@@ -25,6 +25,7 @@ PK_DBSYNONYM = 'id'
 # Example uuid (version 4)
 UUID_REF = 'd55082b6-76dc-426b-af89-0e08b59524d2'
 
+DEBUG_RESPONSE_ATTRIBUTES = [ "method", "url", "url_root", "path", "query_string" ]
 
 ########################## Classes #####################
 class CustomJSONProvider(DefaultJSONProvider):
@@ -385,6 +386,8 @@ class Utils:
 
         :return: a Flask response object
         """
+        from flask import current_app
+        
         ## Type checks
         # mandatory parameters
         if not isinstance(data, dict):
@@ -403,6 +406,10 @@ class Utils:
         # Build response
         response = jsonify(data)
         response.status_code = status
+
+        if not current_app.debug:
+            for key in DEBUG_RESPONSE_ATTRIBUTES:
+                data.pop(key, None)
 
         if headers is not None:
             for key, val in headers.items():
