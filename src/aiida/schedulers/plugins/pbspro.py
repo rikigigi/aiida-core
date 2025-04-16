@@ -48,7 +48,8 @@ class PbsproScheduler(PbsBaseClass):
     # _map_status = _map_status_pbs_common
 
     def _get_resource_lines(
-        self, num_machines, num_mpiprocs_per_machine, num_cores_per_machine, max_memory_kb, max_wallclock_seconds
+        self, num_machines, num_mpiprocs_per_machine, num_cores_per_machine, max_memory_kb, max_wallclock_seconds,
+        num_gpus_per_machine
     ):
         """Return the lines for machines, memory and wallclock relative
         to pbspro.
@@ -63,6 +64,8 @@ class PbsproScheduler(PbsBaseClass):
             select_string += f':mpiprocs={num_mpiprocs_per_machine}'
         if num_cores_per_machine:
             select_string += f':ncpus={num_cores_per_machine}'
+        if num_gpus_per_machine is not None:
+            select_string += f':ngpus={num_gpus_per_machine}'
 
         if max_wallclock_seconds is not None:
             try:

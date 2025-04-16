@@ -36,6 +36,7 @@ __all__ = (
     'JobTemplate',
     'MachineInfo',
     'NodeNumberJobResource',
+    'NodeNumberGpuJobResource',
     'ParEnvJobResource',
 )
 
@@ -198,6 +199,41 @@ class NodeNumberJobResource(JobResource):
         """Return the total number of cpus of this job resource."""
         return self.num_machines * self.num_mpiprocs_per_machine
 
+class NodeNumberGpuJobResource(NodeNumberJobResource):
+    """`JobResource` for schedulers that support the specification of a number of nodes and cpus per node."""
+
+    _default_fields = (
+        'num_machines',
+        'num_mpiprocs_per_machine',
+        'num_cores_per_machine',
+        'num_cores_per_mpiproc',
+        'num_gpus_per_machine',
+    )
+
+    if TYPE_CHECKING:
+        num_machines: int
+        num_mpiprocs_per_machine: int
+        num_cores_per_machine: int
+        num_cores_per_mpiproc: int
+        num_gpus_per_machine: int
+
+    @classmethod
+    def validate_resources(cls, **kwargs):
+        """Validate the resources against the job resource class of this scheduler.
+
+        :param kwargs: dictionary of values to define the job resources
+        :return: attribute dictionary with the parsed parameters populated
+        :raises ValueError: if the resources are invalid or incomplete
+        """
+        resources = super().validate_resources(**kwargs)
+        if resources.num_gpus_per_machine is not None:
+            try:
+                resources.num_gpus_per_machine = int(resources.num_gpus_per_machine)
+            except ValueError:
+                raise ValueError('`num_gpus_per_machine` must be an integer when specified')
+            if resources.num_gpus_per_machine < 0:
+                raise ValueError('`num_gpus_per_machine` must be greater than or equal to zero.')
+        return resources
 
 class ParEnvJobResource(JobResource):
     """`JobResource` for schedulers that support the specification of a parallel environment and number of MPI procs."""
