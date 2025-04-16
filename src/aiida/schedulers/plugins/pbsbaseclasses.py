@@ -14,7 +14,7 @@ import logging
 
 from aiida.common.escaping import escape_for_bash
 from aiida.schedulers import SchedulerError, SchedulerParsingError
-from aiida.schedulers.datastructures import JobInfo, JobState, MachineInfo, NodeNumberJobResource
+from aiida.schedulers.datastructures import JobInfo, JobState, MachineInfo, NodeNumberGpuJobResource
 
 from .bash import BashCliScheduler
 
@@ -65,7 +65,7 @@ _MAP_STATUS_PBS_COMMON = {
 }
 
 
-class PbsJobResource(NodeNumberJobResource):
+class PbsJobResource(NodeNumberGpuJobResource):
     """Class for PBS job resources."""
 
     @classmethod
@@ -126,6 +126,7 @@ class PbsBaseClass(BashCliScheduler):
         num_cores_per_machine: int | None,
         max_memory_kb: int | None,
         max_wallclock_seconds: int | None,
+        num_gpus_per_machine: int | None,
     ) -> list[str]:
         """Return a set a list of lines (possibly empty) with the header
         lines relative to:
@@ -135,6 +136,7 @@ class PbsBaseClass(BashCliScheduler):
         * num_cores_per_machine
         * max_memory_kb
         * max_wallclock_seconds
+        * num_gpus_per_machine
 
         This is done in an external function because it may change in
         different subclasses.
@@ -292,6 +294,7 @@ class PbsBaseClass(BashCliScheduler):
             num_cores_per_machine=job_tmpl.job_resource.num_cores_per_machine,
             max_memory_kb=job_tmpl.max_memory_kb,
             max_wallclock_seconds=job_tmpl.max_wallclock_seconds,
+            num_gpus_per_machine=job_tmpl.job_resource.num_gpus_per_machine,
         )
 
         lines += resource_lines
