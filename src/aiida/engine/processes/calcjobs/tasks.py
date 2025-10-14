@@ -48,6 +48,7 @@ STASH_COMMAND = 'stash'
 KILL_COMMAND = 'kill'
 
 RETRY_INTERVAL_OPTION = 'transport.task_retry_initial_interval'
+MAX_INTERVAL_OPTION = 'transport.task_retry_max_interval'
 MAX_ATTEMPTS_OPTION = 'transport.task_maximum_attempts'
 
 logger = logging.getLogger(__name__)
@@ -79,6 +80,8 @@ async def task_upload_job(process: CalcJob, transport_queue: TransportQueue, can
 
     initial_interval = get_config_option(RETRY_INTERVAL_OPTION)
     max_attempts = get_config_option(MAX_ATTEMPTS_OPTION)
+    max_interval = get_config_option(MAX_INTERVAL_OPTION)
+
     filepath_sandbox = get_config_option('storage.sandbox') or None
 
     authinfo = node.get_authinfo()
@@ -105,7 +108,8 @@ async def task_upload_job(process: CalcJob, transport_queue: TransportQueue, can
         logger.info(f'scheduled request to upload CalcJob<{node.pk}>')
         ignore_exceptions = (plumpy.futures.CancelledError, PreSubmitException, plumpy.process_states.Interruption)
         skip_submit = await utils.exponential_backoff_retry(
-            do_upload, initial_interval, max_attempts, logger=node.logger, ignore_exceptions=ignore_exceptions
+            do_upload, initial_interval, max_attempts, logger=node.logger, ignore_exceptions=ignore_exceptions,
+            max_interval=max_interval
         )
     except PreSubmitException:
         raise
@@ -141,6 +145,7 @@ async def task_submit_job(node: CalcJobNode, transport_queue: TransportQueue, ca
 
     initial_interval = get_config_option(RETRY_INTERVAL_OPTION)
     max_attempts = get_config_option(MAX_ATTEMPTS_OPTION)
+    max_interval = get_config_option(MAX_INTERVAL_OPTION)
 
     authinfo = node.get_authinfo()
 
@@ -153,7 +158,8 @@ async def task_submit_job(node: CalcJobNode, transport_queue: TransportQueue, ca
         logger.info(f'scheduled request to submit CalcJob<{node.pk}>')
         ignore_exceptions = (plumpy.futures.CancelledError, plumpy.process_states.Interruption)
         result = await utils.exponential_backoff_retry(
-            do_submit, initial_interval, max_attempts, logger=node.logger, ignore_exceptions=ignore_exceptions
+            do_submit, initial_interval, max_attempts, logger=node.logger, ignore_exceptions=ignore_exceptions,
+            max_interval=max_interval
         )
     except (plumpy.futures.CancelledError, plumpy.process_states.Interruption):
         raise
@@ -187,6 +193,7 @@ async def task_update_job(node: CalcJobNode, job_manager, cancellable: Interrupt
 
     initial_interval = get_config_option(RETRY_INTERVAL_OPTION)
     max_attempts = get_config_option(MAX_ATTEMPTS_OPTION)
+    max_interval = get_config_option(MAX_INTERVAL_OPTION)
 
     authinfo = node.get_authinfo()
     job_id = node.get_job_id()
@@ -211,7 +218,8 @@ async def task_update_job(node: CalcJobNode, job_manager, cancellable: Interrupt
         logger.info(f'scheduled request to update CalcJob<{node.pk}>')
         ignore_exceptions = (plumpy.futures.CancelledError, plumpy.process_states.Interruption)
         job_done = await utils.exponential_backoff_retry(
-            do_update, initial_interval, max_attempts, logger=node.logger, ignore_exceptions=ignore_exceptions
+            do_update, initial_interval, max_attempts, logger=node.logger, ignore_exceptions=ignore_exceptions,
+            max_interval=max_interval
         )
     except (plumpy.futures.CancelledError, plumpy.process_states.Interruption):
         raise
@@ -250,6 +258,7 @@ async def task_monitor_job(
 
     initial_interval = get_config_option(RETRY_INTERVAL_OPTION)
     max_attempts = get_config_option(MAX_ATTEMPTS_OPTION)
+    max_interval = get_config_option(MAX_INTERVAL_OPTION)
     authinfo = node.get_authinfo()
 
     async def do_monitor():
@@ -261,7 +270,8 @@ async def task_monitor_job(
         logger.info(f'scheduled request to monitor CalcJob<{node.pk}>')
         ignore_exceptions = (plumpy.futures.CancelledError, plumpy.process_states.Interruption)
         monitor_result = await utils.exponential_backoff_retry(
-            do_monitor, initial_interval, max_attempts, logger=node.logger, ignore_exceptions=ignore_exceptions
+            do_monitor, initial_interval, max_attempts, logger=node.logger, ignore_exceptions=ignore_exceptions,
+            max_interval=max_interval
         )
     except (plumpy.futures.CancelledError, plumpy.process_states.Interruption):
         raise
@@ -296,6 +306,7 @@ async def task_retrieve_job(
         return
     initial_interval = get_config_option(RETRY_INTERVAL_OPTION)
     max_attempts = get_config_option(MAX_ATTEMPTS_OPTION)
+    max_interval = get_config_option(MAX_INTERVAL_OPTION)
     authinfo = node.get_authinfo()
 
     async def do_retrieve():
@@ -330,7 +341,8 @@ async def task_retrieve_job(
         logger.info(f'scheduled request to retrieve CalcJob<{node.pk}>')
         ignore_exceptions = (plumpy.futures.CancelledError, plumpy.process_states.Interruption)
         result = await utils.exponential_backoff_retry(
-            do_retrieve, initial_interval, max_attempts, logger=node.logger, ignore_exceptions=ignore_exceptions
+            do_retrieve, initial_interval, max_attempts, logger=node.logger, ignore_exceptions=ignore_exceptions,
+            max_interval=max_interval
         )
     except (plumpy.futures.CancelledError, plumpy.process_states.Interruption):
         raise
@@ -363,6 +375,7 @@ async def task_stash_job(node: CalcJobNode, transport_queue: TransportQueue, can
 
     initial_interval = get_config_option(RETRY_INTERVAL_OPTION)
     max_attempts = get_config_option(MAX_ATTEMPTS_OPTION)
+    max_interval = get_config_option(MAX_INTERVAL_OPTION)
 
     authinfo = node.get_authinfo()
 
@@ -380,6 +393,7 @@ async def task_stash_job(node: CalcJobNode, transport_queue: TransportQueue, can
             max_attempts,
             logger=node.logger,
             ignore_exceptions=(plumpy.process_states.Interruption, StashingError),
+            max_interval=max_interval,
         )
     except plumpy.process_states.Interruption:
         raise
@@ -404,6 +418,7 @@ async def task_unstash_job(node: CalcJobNode, transport_queue: TransportQueue, c
 
     initial_interval = get_config_option(RETRY_INTERVAL_OPTION)
     max_attempts = get_config_option(MAX_ATTEMPTS_OPTION)
+    max_interval = get_config_option(MAX_INTERVAL_OPTION)
 
     authinfo = node.get_authinfo()
 
@@ -421,6 +436,7 @@ async def task_unstash_job(node: CalcJobNode, transport_queue: TransportQueue, c
             max_attempts,
             logger=node.logger,
             ignore_exceptions=plumpy.process_states.Interruption,
+            max_interval=max_interval,
         )
     except plumpy.process_states.Interruption:
         raise
@@ -449,6 +465,7 @@ async def task_kill_job(node: CalcJobNode, transport_queue: TransportQueue, canc
     """
     initial_interval = get_config_option(RETRY_INTERVAL_OPTION)
     max_attempts = get_config_option(MAX_ATTEMPTS_OPTION)
+    max_interval = get_config_option(MAX_INTERVAL_OPTION)
 
     if node.get_state() in [CalcJobState.UPLOADING, CalcJobState.SUBMITTING]:
         logger.warning(f'CalcJob<{node.pk}> killed, it was in the {node.get_state()} state')
@@ -463,7 +480,8 @@ async def task_kill_job(node: CalcJobNode, transport_queue: TransportQueue, canc
 
     try:
         logger.info(f'scheduled request to kill CalcJob<{node.pk}>')
-        result = await utils.exponential_backoff_retry(do_kill, initial_interval, max_attempts, logger=node.logger)
+        result = await utils.exponential_backoff_retry(do_kill, initial_interval, max_attempts, logger=node.logger,
+                                                       max_interval=max_interval)
     except plumpy.process_states.Interruption:
         raise
     except Exception as exception:

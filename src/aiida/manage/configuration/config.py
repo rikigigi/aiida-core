@@ -242,6 +242,9 @@ class ProfileOptionsSchema(BaseModel, defer_build=True):
         description='Maximum number of transport task attempts before a Process is Paused.',
         json_schema_extra={'requires_daemon_restart': True},
     )
+    transport__task_retry_max_interval: int | None = Field(
+        None, description='If specified, the maximum interval to wait between retries.'
+    )
     broker__task_timeout: int = Field(
         10,
         description='Timeout in seconds for task/RPC communications with the message broker.',
