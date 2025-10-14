@@ -115,6 +115,9 @@ class ProfileOptionsSchema(BaseModel, defer_build=True):
     transport__task_maximum_attempts: int = Field(
         5, description='Maximum number of transport task attempts before a Process is Paused.'
     )
+    transport__task_retry_max_interval: int | None = Field(
+        None, description='If specified, the maximum interval to wait between retries.'
+    )
     rmq__task_timeout: int = Field(10, description='Timeout in seconds for communications with RabbitMQ.')
     storage__sandbox: Optional[str] = Field(
         None, description='Absolute path to the directory to store sandbox folders.'
