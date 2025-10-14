@@ -181,6 +181,7 @@ async def exponential_backoff_retry(
     max_attempts: int = 5,
     logger: Optional[logging.Logger] = None,
     ignore_exceptions: Union[None, Type[Exception], Tuple[Type[Exception], ...]] = None,
+    max_interval: Optional[Union[int, float]] = None,
 ) -> Any:
     """Coroutine to call a function, recalling it with an exponential backoff in the case of an exception
 
@@ -193,6 +194,7 @@ async def exponential_backoff_retry(
     :param initial_interval: the time to wait after the first caught exception before calling the coroutine again
     :param max_attempts: the maximum number of times to call the coroutine before re-raising the exception
     :param ignore_exceptions: exceptions to ignore, i.e. when caught do nothing and simply re-raise
+    :param max_interval: if specified, the maximum interval to wait between retries
     :return: result if the ``coro`` call completes within ``max_attempts`` retries without raising
     """
     if logger is None:
@@ -222,6 +224,8 @@ async def exponential_backoff_retry(
                 logger.exception('iteration %d of %s excepted, retrying after %d seconds', count, coro_name, interval)
                 await asyncio.sleep(interval)
                 interval *= 2
+                if max_interval is not None and interval > max_interval:
+                    interval = max_interval
 
     return result
 
