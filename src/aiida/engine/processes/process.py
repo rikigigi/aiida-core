@@ -463,6 +463,11 @@ class Process(PlumpyProcess):
         self._pid = self._create_and_setup_db_record()
 
     @override
+    def on_entering(self, to_state: plumpy.process_states.State) -> None:
+        """Before entering a new state, save a checkpoint."""
+        super().on_entering(to_state)
+
+    @override
     def on_entered(self, from_state: plumpy.process_states.State | None) -> None:
         """After entering a new state, save a checkpoint and update the latest process state change timestamp."""
         from plumpy import ProcessState
