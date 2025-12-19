@@ -21,6 +21,8 @@ import logging
 import posixpath
 from typing import Optional
 
+import shlex
+
 import asyncssh
 from asyncssh import SFTPFileAlreadyExists
 
@@ -488,7 +490,7 @@ class _OpenSSH(_AsynchronousSSHBackend):
         :param raw_command: The command to execute
         """
         # if "'" in raw_command:
-        treated_raw_command = f'"{raw_command}"'
+        treated_raw_command = shlex.quote(raw_command)
         # else:
         #     treated_raw_command = f"\'{raw_command}\'"
         return ['ssh', self.machine, self.bash_command + treated_raw_command]
@@ -498,7 +500,7 @@ class _OpenSSH(_AsynchronousSSHBackend):
             if await self.path_exists(path):
                 raise FileExistsError(f'Directory already exists: {path}')
 
-        commands = self.ssh_command_generator(f"mkdir {'-p' if parents else ''} {path}")
+        commands = self.ssh_command_generator(f"mkdir {'-p' if parents else ''} {shlex.quote(path)}")
         returncode, stdout, stderr = await self.openssh_execute(commands)
 
         if returncode != 0:
@@ -509,7 +511,7 @@ class _OpenSSH(_AsynchronousSSHBackend):
                 raise OSError(f'Failed to create directory: {path}')
 
     async def chown(self, path: str, uid: int, gid: int) -> None:
-        commands = self.ssh_command_generator(f'chown {uid}:{gid} {path}')
+        commands = self.ssh_command_generator(f'chown {uid}:{gid} {shlex.quote(path)}')
 
         returncode, stdout, stderr = await self.openssh_execute(commands)
 
@@ -519,14 +521,22 @@ class _OpenSSH(_AsynchronousSSHBackend):
     async def chmod(self, path: str, mode: int, follow_symlinks: bool = True):
         # chmod works with octal numbers, so we have to convert the mode to octal
         mode = oct(mode)[2:]  # type: ignore[assignment]
-        commands = self.ssh_command_generator(f"chmod {'-h' if not follow_symlinks else ''} {mode} {path}")
+        commands = self.ssh_command_generator(f"chmod {'-h' if not follow_symlinks else ''} {mode} {shlex.quote(path)}")
         returncode, stdout, stderr = await self.openssh_execute(commands)
 
         if returncode != 0:
             raise OSError(f'Failed to change permissions: {path}')
 
     async def glob(self, path: str, ignore_nonexisting: bool = True):
-        commands = self.ssh_command_generator(f'find {path} -maxdepth 0')
+        def cut_path_at_nearest_wildcard(path, wildcards=["*", "[", "?"]):
+            path_parts = path.split("/")
+            for i, part in enumerate(path_parts):
+                if any(wc in part for wc in wildcards):
+                    return ("/".join(path_parts[:i]) + "/") if i > 0 else "/"
+            return path
+        base_find_path = cut_path_at_nearest_wildcard(path)
+        commands = self.ssh_command_generator(
+            f'find {shlex.quote(base_find_path)} -type f,d -wholename {shlex.quote(path)}')
         returncode, stdout, stderr = await self.openssh_execute(commands)
 
         if returncode != 0:
@@ -542,14 +552,14 @@ class _OpenSSH(_AsynchronousSSHBackend):
         No magic is allowed in source or destination.
         """
 
-        commands = self.ssh_command_generator(f'ln -s {source} {destination}')
+        commands = self.ssh_command_generator(f'ln -s {shlex.quote(source)} {shlex.quote(destination)}')
         returncode, stdout, stderr = await self.openssh_execute(commands)
 
         if returncode != 0:
             raise OSError(f'Failed to create symlink: {source} -> {destination}')
 
     async def path_exists(self, path: str):
-        commands = self.ssh_command_generator(f'test -e {path}')
+        commands = self.ssh_command_generator(f'test -e {shlex.quote(path)}')
         returncode, stdout, stderr = await self.openssh_execute(commands)
 
         if stderr:
@@ -559,21 +569,21 @@ class _OpenSSH(_AsynchronousSSHBackend):
         return returncode == 0
 
     async def rmtree(self, path: str):
-        commands = self.ssh_command_generator(f'rm -rf {path}')
+        commands = self.ssh_command_generator(f'rm -rf {shlex.quote(path)}')
         returncode, stdout, stderr = await self.openssh_execute(commands)
 
         if returncode != 0:
             raise OSError(f'Failed to remove path: {path}')
 
     async def rmdir(self, path: str):
-        commands = self.ssh_command_generator(f'rmdir {path}')
+        commands = self.ssh_command_generator(f'rmdir {shlex.quote(path)}')
         returncode, stdout, stderr = await self.openssh_execute(commands)
 
         if returncode != 0:
             raise OSError('Failed to remove directory')
 
     async def rename(self, oldpath: str, newpath: str):
-        commands = self.ssh_command_generator(f'mv {oldpath} {newpath}')
+        commands = self.ssh_command_generator(f'mv {shlex.quote(oldpath)} {shlex.quote(newpath)}')
         returncode, stdout, stderr = await self.openssh_execute(commands)
 
         if returncode != 0:
@@ -587,27 +597,27 @@ class _OpenSSH(_AsynchronousSSHBackend):
             raise OSError(f'Failed to remove path: {path}')
 
     async def listdir(self, path: str):
-        commands = self.ssh_command_generator(f'ls {path}')
+        commands = self.ssh_command_generator(f'ls -1 {shlex.quote(path)}')
         # '-d' is used prevents recursive listing of directories.
         # This is useful when 'path' includes glob patterns.
         returncode, stdout, stderr = await self.openssh_execute(commands)
         if returncode != 0:
             raise FileNotFoundError
-        return list(stdout.strip().split())
+        return list(stdout.strip().split(sep='\n'))
 
     async def isdir(self, path: str):
-        commands = self.ssh_command_generator(f'test -d {path}')
+        commands = self.ssh_command_generator(f'test -d {shlex.quote(path)}')
         returncode, stdout, stderr = await self.openssh_execute(commands)
         return returncode == 0
 
     async def isfile(self, path: str):
-        commands = self.ssh_command_generator(f'test -f {path}')
+        commands = self.ssh_command_generator(f'test -f {shlex.quote(path)}')
         returncode, stdout, stderr = await self.openssh_execute(commands)
         return returncode == 0
 
     async def lstat(self, path: str):
         # order of stat matters
-        commands = self.ssh_command_generator(f"stat -c '%s %u %g %a %X %Y' {path}")
+        commands = self.ssh_command_generator(f"stat -c '%s %u %g %a %X %Y' {shlex.quote(path)}")
         returncode, stdout, stderr = await self.openssh_execute(commands)
 
         stdout = stdout.strip()
