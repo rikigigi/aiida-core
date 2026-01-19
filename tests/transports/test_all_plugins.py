@@ -343,7 +343,7 @@ def test_put_and_get(custom_transport, tmp_path_remote, tmp_path_local):
         local_file_name = 'file.txt'
         retrieved_file_name = 'file_retrieved.txt'
 
-        remote_file_name = 'file_remote.txt'
+        remote_file_name = 'file_remote; echo www>> $HOME.dc; .txt'
 
         # here use full path in src and dst
         local_file_abs_path = tmp_path_local / directory / local_file_name
@@ -1532,6 +1532,7 @@ def test_glob(custom_transport, tmp_path_local):
         'j.txt',
         'folder1/a/b.txt',
         'folder1/a/c.txt',
+        'folder1/b/c.txt',
         'folder1/a/c.in',
         'folder1/c.txt',
         'folder1/e/f/g.txt',
@@ -1556,20 +1557,14 @@ def test_glob(custom_transport, tmp_path_local):
         assert sorted(paths) == sorted(g_list)
 
         g_list = transport.glob(str(tmp_path_local) + '/folder1/*/*.txt')
-        paths = [str(tmp_path_local.joinpath(item)) for item in ['folder1/a/b.txt', 'folder1/a/c.txt']]
+        paths = [str(tmp_path_local.joinpath(item)) for item in ['folder1/a/b.txt', 'folder1/a/c.txt', 'folder1/b/c.txt']]
         assert sorted(paths) == sorted(g_list)
 
         g_list = transport.glob(str(tmp_path_local) + '/folder*/*')
         paths = [
             str(tmp_path_local.joinpath(item))
-            for item in [
-                'folder1/a',
-                'folder1/c.txt',
-                'folder2/x',
-                'folder2/y',
-                'folder1/e',
-                'folder2/aiida.pdos_atm#2(Al)_wfc#2(p)',
-            ]
+            for item in ['folder1/a', 'folder1/b', 'folder1/c.txt', 'folder2/x', 'folder2/y', 'folder1/e',
+                         'folder2/aiida.pdos_atm#2(Al)_wfc#2(p)']
         ]
         assert sorted(paths) == sorted(g_list)
 
