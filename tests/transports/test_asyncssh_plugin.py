@@ -263,3 +263,143 @@ def test_scp_with_special_chars(tmp_path):
         escaped = backend._escape_for_rcp(str(source))
         result = subprocess.run(['scp', '-O', f'localhost:{escaped}', str(dest_rcp)], capture_output=True, check=False)
         assert result.returncode == 0 and dest_rcp.read_text() == f'content of {filename}'
+
+class TestScpCommandConfiguration:
+    """Tests for custom SCP command configuration."""
+
+    def test_default_scp_command(self):
+        """Test that default SCP command is ['scp']."""
+        transport = AsyncSshTransport(machine='localhost', backend='openssh')
+        assert transport.scp_command == ['scp']
+        assert transport.async_backend.scp_command == ['scp']
+
+    def test_custom_scp_command(self):
+        """Test that custom SCP command is properly set."""
+        custom_command = ['scp', '-O']
+        transport = AsyncSshTransport(machine='localhost', backend='openssh', scp_command=custom_command)
+        assert transport.scp_command == custom_command
+        assert transport.async_backend.scp_command == custom_command
+
+    def test_custom_scp_command_with_multiple_options(self):
+        """Test that custom SCP command with multiple options works."""
+        custom_command = ['scp', '-O', '-v', '-P', '2222']
+        transport = AsyncSshTransport(machine='localhost', backend='openssh', scp_command=custom_command)
+        assert transport.scp_command == custom_command
+        assert transport.async_backend.scp_command == custom_command
+
+    def test_custom_scp_command_with_full_path(self):
+        """Test that custom SCP command with full path works."""
+        custom_command = ['/usr/bin/scp', '-O']
+        transport = AsyncSshTransport(machine='localhost', backend='openssh', scp_command=custom_command)
+        assert transport.scp_command == custom_command
+        assert transport.async_backend.scp_command == custom_command
+
+    def test_string_scp_command_cli_compatibility(self):
+        """Test that string SCP commands are converted to lists for CLI compatibility."""
+        # Test simple string
+        transport1 = AsyncSshTransport(machine='localhost', backend='openssh', scp_command='scp -O')
+        assert transport1.scp_command == ['scp', '-O']
+        assert transport1.async_backend.scp_command == ['scp', '-O']
+        
+        # Test complex string
+        transport2 = AsyncSshTransport(machine='localhost', backend='openssh', scp_command='scp -O -v -P 2222')
+        assert transport2.scp_command == ['scp', '-O', '-v', '-P', '2222']
+        assert transport2.async_backend.scp_command == ['scp', '-O', '-v', '-P', '2222']
+        
+        # Test string with quoted arguments
+        transport3 = AsyncSshTransport(machine='localhost', backend='openssh', scp_command='scp "-O" -v')
+        assert transport3.scp_command == ['scp', '-O', '-v']
+        assert transport3.async_backend.scp_command == ['scp', '-O', '-v']
+
+    @pytest.mark.asyncio
+    async def test_scp_command_used_in_get(self):
+        """Test that custom SCP command is used in get operations."""
+        custom_command = ['scp', '-O']
+        transport = AsyncSshTransport(machine='localhost', backend='openssh', scp_command=custom_command)
+        
+        # Mock the openssh_execute method to capture the command
+        original_execute = transport.async_backend.openssh_execute
+        executed_commands = []
+        
+        async def mock_execute(commands, stdin=None, timeout=None):
+            executed_commands.append(commands)
+            return (0, '', '')
+        
+        transport.async_backend.openssh_execute = mock_execute
+        
+        # Try to get a file using the backend method directly (this will fail but we just want to capture the command)
+        try:
+            await transport.async_backend.get('/remote/file', '/local/file', False, False, False)
+        except:
+            pass
+        
+        # Verify that the custom SCP command was used correctly
+        assert len(executed_commands) > 0
+        command_parts = executed_commands[0]
+        # The command should start with the custom command
+        assert command_parts[:2] == custom_command
+
+    @pytest.mark.asyncio
+    async def test_scp_command_used_in_put(self):
+        """Test that custom SCP command is used in put operations."""
+        custom_command = ['scp', '-O']
+        transport = AsyncSshTransport(machine='localhost', backend='openssh', scp_command=custom_command)
+        
+        # Mock the openssh_execute method to capture the command
+        original_execute = transport.async_backend.openssh_execute
+        executed_commands = []
+        
+        async def mock_execute(commands, stdin=None, timeout=None):
+            executed_commands.append(commands)
+            return (0, '', '')
+        
+        transport.async_backend.openssh_execute = mock_execute
+        
+        # Try to put a file using the backend method directly (this will fail but we just want to capture the command)
+        try:
+            await transport.async_backend.put('/local/file', '/remote/file', False, False, False)
+        except:
+            pass
+        
+        # Verify that the custom SCP command was used correctly
+        assert len(executed_commands) > 0
+        command_parts = executed_commands[0]
+        # The command should start with the custom command
+        assert command_parts[:2] == custom_command
+
+    @pytest.mark.asyncio
+    async def test_scp_command_used_in_copy(self):
+        """Test that custom SCP command is used in copy operations."""
+        custom_command = ['scp', '-O']
+        transport = AsyncSshTransport(machine='localhost', backend='openssh', scp_command=custom_command)
+        
+        # Mock the openssh_execute method to capture the command
+        original_execute = transport.async_backend.openssh_execute
+        executed_commands = []
+        
+        async def mock_execute(commands, stdin=None, timeout=None):
+            executed_commands.append(commands)
+            # For path_exists and other checks, return success
+            if commands[0] == 'ssh':
+                return (0, '', '')
+            # For scp command, return success
+            elif commands[0] == 'scp':
+                return (0, '', '')
+            return (0, '', '')
+        
+        transport.async_backend.openssh_execute = mock_execute
+        
+        # Try to copy a file (this will fail but we just want to capture the command)
+        try:
+            await transport.async_backend.copy('/remote/source', '/remote/dest', False, False, False)
+        except:
+            pass
+        
+        # Verify that the custom SCP command was used correctly (it should be the last command)
+        assert len(executed_commands) > 0
+        # Find the SCP command in the executed commands
+        scp_commands = [cmd for cmd in executed_commands if cmd[0] == 'scp']
+        assert len(scp_commands) > 0, "No SCP command was executed"
+        command_parts = scp_commands[0]
+        # The command should start with the custom command
+        assert command_parts[:2] == custom_command
