@@ -13,6 +13,7 @@
 import asyncio
 import glob
 import os
+import shlex
 from pathlib import Path, PurePath
 from typing import Optional, Union
 
@@ -108,6 +109,18 @@ class AsyncSshTransport(AsyncTransport):
                 'callback': validate_backend,
             },
         ),
+        (
+            'scp_command',
+            {
+                'type': list,
+                'default': ['scp'],
+                'prompt': 'SCP command to use for file transfers',
+                'help': 'The SCP command to use for file transfers as a list. Default is ["scp"]. '
+                'Can be modified to use different options like ["scp", "-O"] for legacy SCP protocol. '
+                'For CLI use, strings will be automatically converted to lists.',
+                'non_interactive_default': True,
+            },
+        ),
     ]
 
     @classmethod
@@ -136,11 +149,19 @@ class AsyncSshTransport(AsyncTransport):
         self._max_io_allowed = kwargs.pop('max_io_allowed', self._DEFAULT_max_io_allowed)
         self._semaphore = asyncio.Semaphore(self._max_io_allowed)
         self.script_before = kwargs.pop('script_before', 'None')
+        scp_command = kwargs.pop('scp_command', ['scp'])
+        # Handle both string and list inputs for CLI compatibility
+        if isinstance(scp_command, str):
+            import shlex
+            scp_command = shlex.split(scp_command)
+        elif not isinstance(scp_command, list):
+            scp_command = ['scp']  # fallback to default
+        self.scp_command = scp_command
 
         if kwargs.get('backend') == 'openssh':
             from .async_backend import _OpenSSH
 
-            self.async_backend = _OpenSSH(self.machine, self.logger, self._bash_command_str)
+            self.async_backend = _OpenSSH(self.machine, self.logger, self._bash_command_str, self.scp_command)
         else:
             # default backend is asyncssh
             from .async_backend import _AsyncSSH
