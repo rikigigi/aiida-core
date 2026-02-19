@@ -478,10 +478,12 @@ class _OpenSSH(_AsynchronousSSHBackend):
         logger: logging.LoggerAdapter,
         bash_command: str,
         use_sftp: bool,
+        scp_command: list[str] | None = None,
     ):
         super().__init__(machine, data_machine, logger, bash_command)
         self.use_sftp = use_sftp
         self.scp_options: list[str] = []
+        self.scp_command = scp_command if scp_command is not None else ['scp']
 
         # Check if the local OpenSSH client version is 9.0 or higher.
         # OpenSSH 9.0+ changed scp to use SFTP protocol by default instead of RCP.
@@ -755,7 +757,7 @@ class _OpenSSH(_AsynchronousSSHBackend):
 
         returncode, stdout, stderr = await self.openssh_execute(
             [
-                'scp',
+                *self.scp_command,
                 *options,
                 f'{self.data_machine}:{self._escape_for_scp(remotepath)}',
                 self._escape_for_scp(localpath),
@@ -777,7 +779,7 @@ class _OpenSSH(_AsynchronousSSHBackend):
 
         returncode, stdout, stderr = await self.openssh_execute(
             [
-                'scp',
+                *self.scp_command,
                 *options,
                 self._escape_for_scp(localpath),
                 f'{self.data_machine}:{self._escape_for_scp(remotepath)}',
@@ -831,7 +833,7 @@ class _OpenSSH(_AsynchronousSSHBackend):
 
         returncode, stdout, stderr = await self.openssh_execute(
             [
-                'scp',
+                *self.scp_command,
                 *options,
                 f'{self.data_machine}:{self._escape_for_scp(remotesource)}',
                 f'{self.data_machine}:{self._escape_for_scp(remotedestination)}',
