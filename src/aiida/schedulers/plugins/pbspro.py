@@ -49,6 +49,10 @@ class PbsproScheduler(PbsBaseClass):
     ## for the time being, but I can redefine it if needed.
     # _map_status = _map_status_pbs_common
 
+    # Use -w flag for PBSPro to prevent line wrapping, making output better for parsing
+    # This flag is PBSPro-specific and not available in Torque
+    _qstat_additional_flags = ['-w']
+
     def _get_resource_lines(
         self,
         num_machines: int,
