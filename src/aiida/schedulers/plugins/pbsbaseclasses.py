@@ -131,6 +131,10 @@ class PbsBaseClass(BashCliScheduler):
 
     _map_status = _MAP_STATUS_PBS_COMMON
 
+    # Additional flags to pass to qstat command (e.g., ['-w'] for PBSPro)
+    # Subclasses can override this to add scheduler-specific flags
+    _qstat_additional_flags = []
+
     def _get_resource_lines(
         self,
         num_machines: int,
@@ -162,7 +166,7 @@ class PbsBaseClass(BashCliScheduler):
               to pass the -t options to list each subjob).
         """
 
-        command = ['qstat', '-f']
+        command = ['qstat', '-f'] + self._qstat_additional_flags
 
         if jobs and user:
             raise FeatureNotAvailable('Cannot query by user and job(s) in PBS')
