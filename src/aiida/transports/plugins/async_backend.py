@@ -574,9 +574,15 @@ class _OpenSSH(_AsynchronousSSHBackend):
         :meth:`_escape_for_rcp` while glob characters are deliberately
         preserved for pattern matching. Mode is selected via
         :attr:`is_openssh_9_or_higher`.
+
+        However, if the scp command includes the -O flag, it forces the legacy RCP protocol
+        regardless of the OpenSSH version, so paths always need to be escaped.
         """
 
-        if self.is_openssh_9_or_higher:
+        # Check if -O flag is present in scp_command, which forces legacy RCP protocol
+        if '-O' in self.scp_command:
+            return f'{self._escape_for_rcp(path)}'
+        elif self.is_openssh_9_or_higher:
             return f'{path}'
         else:
             return f'{self._escape_for_rcp(path)}'
