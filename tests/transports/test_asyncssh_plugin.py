@@ -238,6 +238,21 @@ class TestScpEscaping:
         with patch('aiida.transports.plugins.async_backend.is_openssh_9_or_higher', return_value=False):
             assert openssh_backend._escape_for_scp(path) == '/path/with\\ spaces'  # RCP: escaped
 
+    def test_escape_for_scp_with_O_flag(self, openssh_backend):
+        """Test that -O flag forces RCP escaping regardless of OpenSSH version."""
+        path = '/path/with (parentheses)'
+        
+        # Set scp_command to include -O flag
+        openssh_backend.scp_command = ['scp', '-O']
+        
+        # Even with OpenSSH 9+, -O flag should force escaping
+        with patch('aiida.transports.plugins.async_backend.is_openssh_9_or_higher', return_value=True):
+            assert openssh_backend._escape_for_scp(path) == r'/path/with\ \(parentheses\)'  # RCP: escaped
+
+        # With OpenSSH < 9, -O flag should also force escaping
+        with patch('aiida.transports.plugins.async_backend.is_openssh_9_or_higher', return_value=False):
+            assert openssh_backend._escape_for_scp(path) == r'/path/with\ \(parentheses\)'  # RCP: escaped
+
 
 class TestScpIntegration:
     """Integration tests for scp with special characters in filenames."""
@@ -248,7 +263,7 @@ class TestScpIntegration:
         local_dir = tmp_path / 'local'
         remote_dir.mkdir()
         local_dir.mkdir()
-        special_files = ['file with spaces.txt', "file'quote.txt", 'file$dollar.txt']
+        special_files = ['file with spaces.txt', "file'quote.txt", 'file$dollar.txt', 'aiida.pdos_atm#2(Al)_wfc#2(p).txt']
         for f in special_files:
             (remote_dir / f).write_text(f'content of {f}')
         return {'remote': remote_dir, 'local': local_dir, 'files': special_files}
