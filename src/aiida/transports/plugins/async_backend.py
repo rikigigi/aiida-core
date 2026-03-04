@@ -528,9 +528,15 @@ class _OpenSSH(_AsynchronousSSHBackend):
         to prevent shell expansion/injection.
 
         OpenSSH 9.0+, however, uses SFTP mode by default - paths are binary data, no shell quoting needed.
+
+        However, if the scp command includes the -O flag, it forces the legacy RCP protocol
+        regardless of the OpenSSH version, so paths always need to be escaped.
         """
 
-        if self.is_openssh_9_or_higher:
+        # Check if -O flag is present in scp_command, which forces legacy RCP protocol
+        if '-O' in self.scp_command:
+            return f'{self._escape_for_rcp(path)}'
+        elif self.is_openssh_9_or_higher:
             return f'{path}'
         else:
             return f'{self._escape_for_rcp(path)}'
