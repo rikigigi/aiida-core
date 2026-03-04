@@ -803,14 +803,23 @@ class _OpenSSH(_AsynchronousSSHBackend):
                 f'perhaps the parent folder does not exist: {parent_directory}'
             )
 
-        returncode, stdout, stderr = await self.openssh_execute(
-            [
-                *self.scp_command,
-                *options,
-                f'{self.machine}:{self._escape_for_scp(remotesource)}',
-                f'{self.machine}:{self._escape_for_scp(remotedestination)}',
-            ]
-        )
+        if ('-O' in self.scp_command):
+            # 'scp -O' cannot correctly dereference symbolic links (like aiida.save)
+            # on the same remote, and the -L flag is not universally supported across
+            # all scp versions. To ensure symbolic links are followed and copied as
+            # physical files, we generalize this by executing a 'cp -rL' command
+            # directly via an SSH connection.
+            commands = self.ssh_command_generator('cp -rL {} {}', paths=[remotesource, remotedestination])
+            returncode, stdout, stderr = await self.openssh_execute(commands)
+        else:
+            returncode, stdout, stderr = await self.openssh_execute(
+                [
+                    *self.scp_command,
+                    *options,
+                    f'{self.machine}:{self._escape_for_scp(remotesource)}',
+                    f'{self.machine}:{self._escape_for_scp(remotedestination)}',
+                ]
+            )
         if returncode != 0:
             raise OSError(f'Failed to copy from {remotesource} to {remotedestination} : {stderr}')
 

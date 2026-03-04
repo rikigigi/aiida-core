@@ -405,7 +405,6 @@ class TestScpCommandConfiguration:
         transport = AsyncSshTransport(machine='localhost', backend='openssh', scp_command=custom_command)
         
         # Mock the openssh_execute method to capture the command
-        original_execute = transport.async_backend.openssh_execute
         executed_commands = []
         
         async def mock_execute(commands, stdin=None, timeout=None):
@@ -417,20 +416,20 @@ class TestScpCommandConfiguration:
             elif commands[0] == 'scp':
                 return (0, '', '')
             return (0, '', '')
-        
+
         transport.async_backend.openssh_execute = mock_execute
-        
+
         # Try to copy a file (this will fail but we just want to capture the command)
         try:
             await transport.async_backend.copy('/remote/source', '/remote/dest', False, False, False)
         except:
             pass
-        
-        # Verify that the custom SCP command was used correctly (it should be the last command)
+
+        # Verify that the SSH command was used instead of SCP
         assert len(executed_commands) > 0
-        # Find the SCP command in the executed commands
-        scp_commands = [cmd for cmd in executed_commands if cmd[0] == 'scp']
-        assert len(scp_commands) > 0, "No SCP command was executed"
-        command_parts = scp_commands[0]
-        # The command should start with the custom command
-        assert command_parts[:2] == custom_command
+        # Find the SSH command in the executed commands
+        ssh_commands = [cmd for cmd in executed_commands if cmd[0] == 'ssh']
+        assert len(ssh_commands) > 0, "No SSH command was executed"
+        command_parts = ssh_commands[-1]
+        # The command should contain 'cp -rL'
+        assert 'cp -rL' in ' '.join(command_parts)
