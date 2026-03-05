@@ -220,6 +220,7 @@ class TestScpEscaping:
         class TestOpenSSH(_OpenSSH):
             def __init__(self):
                 self.machine = 'localhost'
+                self.scp_command = ['scp']
 
         return TestOpenSSH()
 
@@ -421,9 +422,11 @@ class TestScpCommandConfiguration:
 
         # Try to copy a file (this will fail but we just want to capture the command)
         try:
-            await transport.async_backend.copy('/remote/source', '/remote/dest', False, False, False)
+            await transport.async_backend.copy('/scratch2/dbp-advmod/materys/8a/76/f5fd-e518-45c3-bed3-1817021141ab/./out/*', '/scratch2/dbp-advmod/materys/db/f0/a23d-60a6-4300-8dc3-95dd21f72f7e/out', False, False, False)
         except:
             pass
+        
+        print(executed_commands)
 
         # Verify that the SSH command was used instead of SCP
         assert len(executed_commands) > 0
