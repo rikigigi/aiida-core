@@ -288,6 +288,7 @@ class _TestOpenSSH(_OpenSSH):
     def __init__(self):
         self.machine = 'localhost'
         self.bash_command = 'bash -c '
+        self.scp_command = ['scp']
 
 
 def test_openssh_path_exists_raises_on_unexpected_return_code():
@@ -343,6 +344,34 @@ def test_escape_for_rcp():
     assert backend._escape_for_rcp('/path/with spaces/$VAR;cmd') == '/path/with\\ spaces/\\$VAR\\;cmd'
     # Glob characters pass through so the remote shell can expand them.
     assert backend._escape_for_rcp('/dir/*.[ch]') == '/dir/*.[ch]'
+
+
+class TestScpEscaping:
+    """Tests for scp path escaping for OpenSSH 9+ (SFTP) vs <9 (RCP)."""
+
+    @pytest.fixture
+    def openssh_backend(self):
+        class TestOpenSSH(_OpenSSH):
+            def __init__(self):
+                self.machine = 'localhost'
+                self.scp_command = ['scp']
+
+        return TestOpenSSH()
+
+    def test_escape_for_rcp(self, openssh_backend):
+        """Test RCP mode escapes shell metacharacters."""
+        assert openssh_backend._escape_for_rcp('/path/with spaces/$VAR;cmd') == '/path/with\\ spaces/\\$VAR\\;cmd'
+
+    def test_escape_for_scp_version_aware(self, openssh_backend):
+        """Test _escape_for_scp behavior differs by OpenSSH version."""
+        get_openssh_version.cache_clear()
+        path = '/path/with spaces'
+
+        with patch('aiida.transports.plugins.async_backend.is_openssh_9_or_higher', return_value=True):
+            assert openssh_backend._escape_for_scp(path) == path  # SFTP: no escaping
+
+        with patch('aiida.transports.plugins.async_backend.is_openssh_9_or_higher', return_value=False):
+            assert openssh_backend._escape_for_scp(path) == '/path/with\\ spaces'  # RCP: escaped
 
     def test_escape_for_scp_with_O_flag(self, openssh_backend):
         """Test that -O flag forces RCP escaping regardless of OpenSSH version."""
@@ -570,9 +599,11 @@ class TestScpCommandConfiguration:
 
         # Try to copy a file (this will fail but we just want to capture the command)
         try:
-            await transport.async_backend.copy('/remote/source', '/remote/dest', False, False, False)
+            await transport.async_backend.copy('/scratch2/dadvmod/mat/8a/76/f5fd-e518-45c3-bed3-1817021141ab/./out/*', '/scratch2/dadvmod/mat/db/f0/a23d-60a6-4300-8dc3-95dd21f72f7e/out', False, False, False)
         except:
             pass
+        
+        print(executed_commands)
 
         # Verify that the SSH command was used instead of SCP
         assert len(executed_commands) > 0
