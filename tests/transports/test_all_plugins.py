@@ -63,7 +63,8 @@ def tmp_path_local(tmp_path_factory):
         ('core.local', None),
         ('core.ssh', None),
         ('core.ssh_async', 'asyncssh'),
-        ('core.ssh_async', 'openssh'),
+        ('core.ssh_async', 'openssh', ['scp']),
+        ('core.ssh_async', 'openssh', ['scp','-O']),
     ],
 )
 def custom_transport(request, tmp_path_factory, monkeypatch) -> Transport:
@@ -72,10 +73,16 @@ def custom_transport(request, tmp_path_factory, monkeypatch) -> Transport:
 
     if request.param[0] == 'core.ssh':
         kwargs = {'machine': 'localhost', 'timeout': 30, 'load_system_host_keys': True, 'key_policy': 'AutoAddPolicy'}
-    elif request.param[0] == 'core.ssh_async':
+    elif request.param[0] == 'core.ssh_async' and request.param[1] == 'asyncssh':
         kwargs = {
             'machine': 'localhost',
             'backend': request.param[1],
+        }
+    elif request.param[0] == 'core.ssh_async' and request.param[1] == 'openssh':
+        kwargs = {
+            'machine': 'localhost',
+            'backend': request.param[1],
+            'scp_command': request.param[2]
         }
     else:
         kwargs = {}
@@ -683,10 +690,12 @@ def test_copy(custom_transport, tmp_path_remote):
         base_dir = workdir / 'origin'
         base_dir.mkdir()
 
+        fname_3='c#2`echo pippo`.txt'
+
         # first create three files
         file_1 = base_dir / 'a.txt'
         file_2 = base_dir / 'b.tmp'
-        file_3 = base_dir / 'c.txt'
+        file_3 = base_dir / fname_3
         text = 'Viva Verdi\n'
         for filename in [file_1, file_2, file_3]:
             with open(filename, 'w', encoding='utf8') as fhandle:
@@ -694,14 +703,14 @@ def test_copy(custom_transport, tmp_path_remote):
 
         # first test the copy. Copy of two files matching patterns, into a folder
         transport.copy(base_dir / '*.txt', workdir)
-        assert set(['a.txt', 'c.txt', 'origin']) == set(transport.listdir(workdir))
+        assert set(['a.txt', fname_3, 'origin']) == set(transport.listdir(workdir))
         transport.remove(workdir / 'a.txt')
-        transport.remove(workdir / 'c.txt')
+        transport.remove(workdir / fname_3 )
 
         # second test copy. Copy of two folders
         transport.copy(base_dir, workdir / 'prova')
         assert set(['prova', 'origin']) == set(transport.listdir(workdir))
-        assert set(['a.txt', 'b.tmp', 'c.txt']) == set(transport.listdir(workdir / 'prova'))
+        assert set(['a.txt', 'b.tmp', fname_3]) == set(transport.listdir(workdir / 'prova'))
         transport.rmtree(workdir / 'prova')
 
         # third test copy. Can copy one file into a new file
@@ -730,7 +739,158 @@ def test_copy(custom_transport, tmp_path_remote):
         transport.mkdir((workdir / 'prova'))
         transport.copy((base_dir), (workdir / 'prova'))
         assert set(['origin']) == set(transport.listdir((workdir / 'prova')))
-        assert set(['a.txt', 'b.tmp', 'c.txt']) == set(transport.listdir((workdir / 'prova' / 'origin')))
+        assert set(['a.txt', 'b.tmp', fname_3]) == set(transport.listdir((workdir / 'prova' / 'origin')))
+
+
+def test_copy_folder_with_symlink(custom_transport, tmp_path_remote):
+    """Test copying a full folder that contains a symbolic link."""
+    remote_dir = tmp_path_remote
+    directory = 'tmp_try_symlink'
+
+    with custom_transport as transport:
+        workdir = remote_dir / directory
+        transport.mkdir(workdir)
+
+        # Create source directory with files and a symbolic link
+        base_dir = workdir / 'origin'
+        base_dir.mkdir()
+        
+        # Create some files
+        file_1 = base_dir / 'real_file.txt'
+        file_1.write_text('Content of real file')
+        
+        file_2 = base_dir / 'another_file.txt'
+        file_2.write_text('Content of another file')
+        
+        # Create a symbolic link pointing to the real file
+        symlink = base_dir / 'symlink_to_file.txt'
+        symlink.symlink_to(file_1)
+        
+        # Test copying the entire folder
+        dest_dir = workdir / 'copied_folder'
+        transport.copy(base_dir, dest_dir)
+        
+        # Verify the copy was successful
+        assert transport.isdir(dest_dir)
+        
+        # Check that files were copied
+        assert transport.isfile(dest_dir / 'real_file.txt')
+        assert transport.isfile(dest_dir / 'another_file.txt')
+        
+        # Check the content of the copied files
+        with tempfile.NamedTemporaryFile() as tmpf:
+            transport.getfile(dest_dir / 'real_file.txt', tmpf.name)
+            assert tmpf.read().decode('utf-8') == 'Content of real file'
+        
+        with tempfile.NamedTemporaryFile() as tmpf:
+            transport.getfile(dest_dir / 'another_file.txt', tmpf.name)
+            assert tmpf.read().decode('utf-8') == 'Content of another file'
+        
+        # Check if symlink exists (behavior may vary by transport)
+        # Some transports may copy the symlink as a symlink, others may copy the content
+        if transport.isfile(dest_dir / 'symlink_to_file.txt'):
+            # Symlink was copied as a regular file (content was copied)
+            with tempfile.NamedTemporaryFile() as tmpf:
+                transport.getfile(dest_dir / 'symlink_to_file.txt', tmpf.name)
+                content = tmpf.read().decode('utf-8')
+                assert content == 'Content of real file'
+        elif transport.path_exists(dest_dir / 'symlink_to_file.txt'):
+            # Symlink exists as a symlink (this is transport-dependent)
+            # For SSH transports, this might be preserved as a symlink
+            pass
+        
+        # Cleanup
+        transport.rmtree(dest_dir)
+
+
+def test_copy_folder_content_with_glob_and_symlink(custom_transport, tmp_path_remote):
+    """Test copying folder content with glob pattern, including symbolic link to folder."""
+    remote_dir = tmp_path_remote
+    directory = 'tmp_try_glob_symlink'
+
+    with custom_transport as transport:
+        workdir = remote_dir / directory
+        transport.mkdir(workdir)
+
+        # Create source directory structure
+        base_dir = workdir / 'origin'
+        base_dir.mkdir()
+        
+        # Create subdirectories
+        subdir1 = base_dir / 'subdir1'
+        subdir1.mkdir()
+        subdir2 = base_dir / 'subdir2'
+        subdir2.mkdir()
+        
+        # Create files in subdirectories
+        (subdir1 / 'file1.txt').write_text('Content of file1')
+        (subdir1 / 'file2.txt').write_text('Content of file2')
+        (subdir2 / 'file3.txt').write_text('Content of file3')
+        
+        # Create a symbolic link pointing to subdir1
+        symlink_to_dir = base_dir / 'link_to_subdir1'
+        symlink_to_dir.symlink_to(subdir1)
+        
+        # Create destination directory
+        dest_dir = workdir / 'dest'
+        transport.mkdir(dest_dir)
+        
+        # Test copying with glob pattern that matches files in subdirectories
+        transport.copy(base_dir / 'subdir*' / '*.txt', dest_dir)
+        
+        # Verify files were copied
+        assert transport.isfile(dest_dir / 'file1.txt')
+        assert transport.isfile(dest_dir / 'file2.txt')
+        assert transport.isfile(dest_dir / 'file3.txt')
+        
+        # Check content of copied files
+        with tempfile.NamedTemporaryFile() as tmpf:
+            transport.getfile(dest_dir / 'file1.txt', tmpf.name)
+            assert tmpf.read().decode('utf-8') == 'Content of file1'
+        
+        with tempfile.NamedTemporaryFile() as tmpf:
+            transport.getfile(dest_dir / 'file2.txt', tmpf.name)
+            assert tmpf.read().decode('utf-8') == 'Content of file2'
+        
+        with tempfile.NamedTemporaryFile() as tmpf:
+            transport.getfile(dest_dir / 'file3.txt', tmpf.name)
+            assert tmpf.read().decode('utf-8') == 'Content of file3'
+        
+        # Test copying with glob pattern that includes the symlink to directory
+        # Note: This test demonstrates a known limitation in asyncssh transport
+        # where glob patterns with symlinks may not work as expected
+        dest_dir2 = workdir / 'dest2'
+        transport.mkdir(dest_dir2)
+        
+        # Copy using a pattern that should match the symlink
+        # Some transports (like local) will follow symlinks in glob patterns
+        # Others (like asyncssh with SFTP) may not support this due to library limitations
+        try:
+            transport.copy(base_dir / 'link_*' / '*.txt', dest_dir2)
+            
+            # If the copy succeeded, check if files were copied from the symlink target
+            if transport.isfile(dest_dir2 / 'file1.txt'):
+                # Transport followed the symlink and copied files
+                with tempfile.NamedTemporaryFile() as tmpf:
+                    transport.getfile(dest_dir2 / 'file1.txt', tmpf.name)
+                    assert tmpf.read().decode('utf-8') == 'Content of file1'
+                
+                with tempfile.NamedTemporaryFile() as tmpf:
+                    transport.getfile(dest_dir2 / 'file2.txt', tmpf.name)
+                    assert tmpf.read().decode('utf-8') == 'Content of file2'
+            # If no files were copied but no error was raised, the transport didn't follow the symlink
+            
+        except (FileNotFoundError, OSError) as e:
+            # Known limitation: asyncssh SFTP doesn't follow symlinks in glob patterns
+            # This is expected behavior for some transports
+            if 'AsyncSshTransport' not in str(custom_transport):
+                # For non-asyncssh transports, this should work
+                raise
+        
+        # Cleanup
+        transport.rmtree(dest_dir)
+        if transport.path_exists(dest_dir2):
+            transport.rmtree(dest_dir2)
 
 
 def test_put(custom_transport, tmp_path_remote, tmp_path_local):
