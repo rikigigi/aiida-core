@@ -809,7 +809,8 @@ class _OpenSSH(_AsynchronousSSHBackend):
             # all scp versions. To ensure symbolic links are followed and copied as
             # physical files, we generalize this by executing a 'cp -rL' command
             # directly via an SSH connection.
-            commands = self.ssh_command_generator('cp -rL {} {}', paths=[remotesource, remotedestination])
+            # cp treats paths as a sequence of bytes, so we can prevent escaping to allow for shell expansion
+            commands = self.ssh_command_generator(f'cp -rL {remotesource} {remotedestination}')
             returncode, stdout, stderr = await self.openssh_execute(commands)
         else:
             returncode, stdout, stderr = await self.openssh_execute(
