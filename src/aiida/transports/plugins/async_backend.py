@@ -515,7 +515,15 @@ class _OpenSSH(_AsynchronousSSHBackend):
                 await process.wait()
                 return -1, '', 'Timeout exceeded'
 
-        return process.returncode, stdout.decode(), stderr.decode()
+        # Decode with error handling for invalid UTF-8 sequences
+        try:
+            stdout_str = stdout.decode('utf-8')
+            stderr_str = stderr.decode('utf-8')
+        except UnicodeDecodeError:
+            # Fall back to latin-1 which can decode any byte, or use replacement characters
+            stdout_str = stdout.decode('utf-8', errors='replace')
+            stderr_str = stderr.decode('utf-8', errors='replace')
+        return process.returncode, stdout_str, stderr_str
 
     def _escape_for_rcp(self, path: str) -> str:
         """Escape special characters for scp RCP mode using backslashes.

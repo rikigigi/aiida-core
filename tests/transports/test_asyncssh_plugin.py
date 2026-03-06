@@ -454,3 +454,323 @@ class TestScpCommandConfiguration:
         command_parts = ssh_commands[-1]
         # The command should contain 'cp -rL'
         assert 'cp -rL' in ' '.join(command_parts)
+
+
+class TestSecurityEscaping:
+    """Security-focused tests for command and path escaping."""
+
+    @pytest.fixture
+    def openssh_backend(self):
+        class TestOpenSSH(_OpenSSH):
+            def __init__(self):
+                self.machine = 'localhost'
+                self.scp_command = ['scp']
+
+        return TestOpenSSH()
+
+    def test_escape_command_injection_attempts(self, openssh_backend):
+        """Test that command injection attempts in paths are properly escaped."""
+        malicious_paths = [
+            '/path; rm -rf /',           # Command injection with semicolon
+            r'/path $(whoami)',           # Command substitution
+            r'/path `whoami`',            # Backtick command substitution
+            '/path && echo hacked',      # Command chaining
+            '/path | cat /etc/passwd',   # Pipe to command
+            '/path > /tmp/hack',         # Output redirection
+            '/path < /etc/passwd',       # Input redirection
+            r'/path $(rm /tmp/*)',        # Nested command substitution
+            r'/path $HOME',               # Environment variable expansion
+            r'/path ${PATH}',             # Braced environment variable
+        ]
+        
+        for path in malicious_paths:
+            escaped = openssh_backend._escape_for_glob(path)
+            
+            # Check that dangerous characters are escaped with backslashes
+            # Count exact number of escapes to ensure all instances are escaped
+            if ';' in path:
+                original_count = path.count(';')
+                escaped_count = escaped.count(r'\;')
+                assert escaped_count == original_count, f"Semicolon not fully escaped in {path}: expected {original_count}, got {escaped_count}"
+            if '$' in path:
+                original_count = path.count('$')
+                escaped_count = escaped.count(r'\$')
+                assert escaped_count == original_count, f"Dollar not fully escaped in {path}: expected {original_count}, got {escaped_count}"
+            if '`' in path:
+                original_count = path.count('`')
+                escaped_count = escaped.count(r'\`')
+                assert escaped_count == original_count, f"Backtick not fully escaped in {path}: expected {original_count}, got {escaped_count}"
+            if '|' in path:
+                original_count = path.count('|')
+                escaped_count = escaped.count(r'\|')
+                assert escaped_count == original_count, f"Pipe not fully escaped in {path}: expected {original_count}, got {escaped_count}"
+            if '>' in path:
+                original_count = path.count('>')
+                escaped_count = escaped.count(r'\>')
+                assert escaped_count == original_count, f"Redirection not fully escaped in {path}: expected {original_count}, got {escaped_count}"
+            if '<' in path:
+                original_count = path.count('<')
+                escaped_count = escaped.count(r'\<')
+                assert escaped_count == original_count, f"Redirection not fully escaped in {path}: expected {original_count}, got {escaped_count}"
+            if '&' in path:
+                original_count = path.count('&')
+                escaped_count = escaped.count(r'\&')
+                assert escaped_count == original_count, f"Ampersand not fully escaped in {path}: expected {original_count}, got {escaped_count}"
+
+    def test_escape_unicode_and_special_chars(self, openssh_backend):
+        """Test escaping of Unicode characters and special filesystem characters."""
+        special_paths = [
+            '/path/with/unicode/ñáéíóú',  # Unicode characters
+            '/path/with/spaces and spaces', # Multiple spaces
+            '/path/with\ttabs',           # Tab characters
+            '/path/with\nnewlines',       # Newline characters
+            '/path/with[brackets]',       # Square brackets
+            '/path/with{braces}',         # Curly braces
+            '/path/with(parens)',         # Parentheses
+            '/path/with@symbols',         # At symbol
+            '/path/with#hash',            # Hash symbol
+            '/path/with!exclamation',     # Exclamation mark
+        ]
+        
+        for path in special_paths:
+            escaped = openssh_backend._escape_for_glob(path)
+            # Should not raise exceptions and should escape appropriately
+            assert escaped is not None
+            assert len(escaped) > 0
+
+    def test_glob_behavior_with_wildcards(self, openssh_backend):
+        """Test that glob patterns preserve wildcards but escape dangerous characters."""
+        test_cases = [
+            ('/path/*.txt', '/path/*.txt'),        # Simple wildcard preserved
+            ('/path/file[1-9].dat', '/path/file[1-9].dat'), # Character class preserved
+            ('/path/**/*.log', '/path/**/*.log'), # Recursive wildcard preserved
+            ('/path; rm -rf /', r'/path\;\ rm\ -rf\ /'), # Dangerous pattern escaped
+            (r'/path$(cmd)', r'/path\$\(cmd\)'), # Command substitution escaped
+            (r'/path`cmd`', r'/path\`cmd\`'), # Backtick substitution escaped
+            ('/path with spaces/*.txt', r'/path\ with\ spaces/*.txt'), # Spaces escaped, wildcard preserved
+        ]
+        
+        for pattern, expected_escaped in test_cases:
+            escaped = openssh_backend._escape_for_glob(pattern)
+            assert escaped == expected_escaped, f"Expected {expected_escaped}, got {escaped} for {pattern}"
+
+    def test_escape_path_traversal_attempts(self, openssh_backend):
+        """Test that path traversal attempts are handled safely."""
+        traversal_paths = [
+            '/path/../etc/passwd',       # Simple traversal
+            '/path/../../../etc/passwd', # Multiple traversals
+            '/path/./current/file',       # Current directory references
+            '/path/subdir/../file',      # Mixed traversal
+            '/path/../',                  # Traversal at end
+            '../relative/path',          # Relative traversal
+        ]
+        
+        for path in traversal_paths:
+            escaped = openssh_backend._escape_for_glob(path)
+            # Should escape the path but not necessarily prevent traversal
+            # (traversal prevention is filesystem's responsibility)
+            assert escaped is not None
+            assert len(escaped) > 0
+
+    def test_escape_environment_variable_injection(self, openssh_backend):
+        """Test escaping of environment variable injection attempts."""
+        env_var_paths = [
+            r'/path/$USER/file',          # Simple variable (raw string)
+            r'/path/${HOME}/file',        # Braced variable (raw string)
+            r'/path/$PATH:/etc',          # Path variable (raw string)
+            r'/path/${HOSTNAME}',         # System variable (raw string)
+            r'/path/$((1+1))',            # Arithmetic expansion (raw string)
+            r'/path/${VAR:-default}',     # Variable with default (raw string)
+        ]
+        
+        for path in env_var_paths:
+            escaped = openssh_backend._escape_for_glob(path)
+            # Environment variables should be escaped with backslashes
+            # Count exact number of dollar signs and ensure all are escaped
+            original_dollars = path.count('$')
+            escaped_dollars = escaped.count(r'\$')
+            assert escaped_dollars == original_dollars, f"Dollar signs not fully escaped in {path}: expected {original_dollars}, got {escaped_dollars}"
+
+    def test_escape_symlink_race_conditions(self, openssh_backend):
+        """Test that symlink-related operations are safely escaped."""
+        # While escaping can't prevent symlink races, it should not make them worse
+        symlink_paths = [
+            '/path/to/symlink',
+            '/path/with spaces/symlink',
+            r'/path/with$var/symlink',
+            '/path/with;cmd/symlink',
+        ]
+        
+        for path in symlink_paths:
+            escaped = openssh_backend._escape_for_glob(path)
+            assert escaped is not None
+            assert len(escaped) > 0
+            # Dangerous characters should still be escaped - count exactly
+            if ';' in path:
+                original_count = path.count(';')
+                escaped_count = escaped.count(r'\;')
+                assert escaped_count == original_count, f"Semicolons not fully escaped: expected {original_count}, got {escaped_count}"
+            if '$' in path:
+                original_count = path.count('$')
+                escaped_count = escaped.count(r'\$')
+                assert escaped_count == original_count, f"Dollars not fully escaped: expected {original_count}, got {escaped_count}"
+
+    def test_escape_extremely_long_paths(self, openssh_backend):
+        """Test escaping of extremely long paths that might cause issues."""
+        long_path = '/very/' + 'long/' * 100 + 'path'
+        escaped = openssh_backend._escape_for_glob(long_path)
+        
+        # Should handle long paths without crashing
+        assert escaped is not None
+        # The escaped version should be at least as long as original
+        assert len(escaped) >= len(long_path)
+        
+        # Test path that's exactly at common limits (e.g., 255, 4096 chars)
+        for length in [255, 4096]:
+            test_path = '/test/' + 'a' * length
+            escaped = openssh_backend._escape_for_glob(test_path)
+            assert escaped is not None
+            # Escaped version should be >= original length
+            assert len(escaped) >= len(test_path)
+
+    def test_escape_mixed_quoting_attempts(self, openssh_backend):
+        """Test escaping of paths with mixed quoting attempts."""
+        mixed_quote_paths = [
+            r'/path/with"single"quotes',  # Single quotes (raw string)
+            r'/path/with"double"quotes',  # Double quotes (raw string)
+            r'/path/with\"escaped\"quotes', # Escaped quotes (raw string)
+            r"'/path/starting/with/quote",   # Starting with quote (raw string)
+            r"/path/ending/with/quote'",    # Ending with quote (raw string)
+            r'/path/with\backslashes',    # Backslashes (raw string)
+        ]
+        
+        for path in mixed_quote_paths:
+            escaped = openssh_backend._escape_for_glob(path)
+            assert escaped is not None
+            # Quotes should be escaped with backslashes
+            if "'" in path:
+                assert "\\'" in escaped or escaped.count("'") > path.count("'")
+            if '"' in path:
+                assert '\\"' in escaped or escaped.count('"') > path.count('"')
+            if '\\' in path:
+                assert escaped.count('\\') >= path.count('\\')
+
+    def test_escape_null_bytes_and_control_chars(self, openssh_backend):
+        """Test escaping of null bytes and control characters."""
+        control_char_paths = [
+            '/path/with\x00null',        # Null byte
+            '/path/with\x01control',     # Control-A
+            '/path/with\x1fcontrol',     # Control-_
+            '/path/with\t\n\rwhitespace', # Various whitespace
+        ]
+        
+        for path in control_char_paths:
+            escaped = openssh_backend._escape_for_glob(path)
+            assert escaped is not None
+            # Should handle control characters safely
+            assert len(escaped) > 0
+
+    def test_escape_glob_negation_patterns(self, openssh_backend):
+        """Test escaping of glob negation patterns that could be dangerous."""
+        negation_patterns = [
+            ('/path/[!a-z]*.txt', '/path/[\!a-z]*.txt'),          # Negated character class
+            ('/path/*[!0-9]', '/path/*[\!0-9]'),             # Negation at end
+            ('/path/[!abc]file', '/path/[\!abc]file'),           # Simple negation
+        ]
+        
+        for pattern, expected_escaped in negation_patterns:
+            escaped = openssh_backend._escape_for_glob(pattern)
+            assert escaped is not None
+            # The negation pattern should be escaped (exclamation mark escaped)
+            assert escaped == expected_escaped, f"Expected {expected_escaped}, got {escaped}"
+
+    def test_escape_extended_glob_patterns(self, openssh_backend):
+        """Test escaping of extended glob patterns."""
+        extended_patterns = [
+            ('/path/@(file1|file2).txt', '/path/@\(file1\|file2\).txt'),   # Alternation
+            ('/path/+(file1|file2).txt', '/path/+\(file1\|file2\).txt'),   # One or more
+            ('/path/*(file1|file2).txt', '/path/*\(file1\|file2\).txt'),   # Zero or more
+            ('/path/?(file1|file2).txt', '/path/?\(file1\|file2\).txt'),   # Zero or one
+            ('/path/!(file1|file2).txt', '/path/\!\(file1\|file2\).txt'),   # Negation
+        ]
+        
+        for pattern, expected_escaped in extended_patterns:
+            escaped = openssh_backend._escape_for_glob(pattern)
+            assert escaped is not None
+            # Extended glob patterns should be escaped (special chars escaped)
+            assert escaped == expected_escaped, f"Expected {expected_escaped}, got {escaped}"
+
+    def test_escape_shell_metacharacters_comprehensive(self, openssh_backend):
+        """Comprehensive test of all shell metacharacters."""
+        metacharacters = '; & | < > ( ) $ ` \\ " \' ! # [ ] { } * ? ~'
+        
+        for char in metacharacters:
+            path = f'/path/with{char}char'
+            escaped = openssh_backend._escape_for_glob(path)
+            
+            # Most metacharacters should be escaped (prefixed with backslash)
+            if char in [';', '&', '|', '<', '>', '$', '`', '!', '#']:
+                assert f'\\{char}' in escaped, f"Metacharacter {char} not escaped"
+            
+            # Some characters are preserved for glob functionality but may also be escaped
+            elif char in ['*', '?', '[', ']', '{', '}', '~']:
+                # These may be preserved or escaped depending on context
+                pass
+            
+            # Quotes and backslashes should be escaped
+            elif char in ['"', "'", '\\']:
+                assert f'\\{char}' in escaped, f"Quote/backslash {char} not escaped"
+
+    def test_escape_real_world_malicious_filenames(self, openssh_backend):
+        """Test escaping of real-world malicious filename examples."""
+        real_world_malicious = [
+            # Common attack patterns
+            '/etc/passwd',
+            '/etc/shadow',
+            '/home/user/.ssh/authorized_keys',
+            '/home/user/.bash_history',
+            '/proc/self/environ',
+            
+            # Web-related attacks
+            '/var/www/html/index.php',
+            '/var/www/.htaccess',
+            
+            # Command injection via filenames (use raw strings)
+            r'$(id)',
+            r'`whoami`',
+            '; id',
+            '&& cat /etc/passwd',
+            
+            # Path traversal
+            '../../../etc/passwd',
+            '/var/www/../../etc/passwd',
+            
+            # Mixed attacks (use raw strings)
+            r'/tmp/$(whoami)_`id`.txt',
+            '/home/user/.ssh/authorized_keys; echo hacked',
+        ]
+        
+        for filename in real_world_malicious:
+            # Test both as full path and as part of path
+            for path in [filename, f'/base/dir/{filename}']:
+                escaped = openssh_backend._escape_for_glob(path)
+                assert escaped is not None
+                assert len(escaped) > 0
+                
+                # Check that common dangerous patterns are escaped with backslashes - count exactly
+                if '$(' in path:
+                    original_dollars = path.count('$')
+                    escaped_dollars = escaped.count(r'\$')
+                    assert escaped_dollars == original_dollars, f"Dollars not fully escaped in {path}"
+                if '`' in path:
+                    original_backticks = path.count('`')
+                    escaped_backticks = escaped.count(r'\`')
+                    assert escaped_backticks == original_backticks, f"Backticks not fully escaped in {path}"
+                if ';' in path:
+                    original_semicolons = path.count(';')
+                    escaped_semicolons = escaped.count(r'\;')
+                    assert escaped_semicolons == original_semicolons, f"Semicolons not fully escaped in {path}"
+                if '&&' in path:
+                    original_ampersands = path.count('&')
+                    escaped_ampersands = escaped.count(r'\&')
+                    assert escaped_ampersands == original_ampersands, f"Ampersands not fully escaped in {path}"

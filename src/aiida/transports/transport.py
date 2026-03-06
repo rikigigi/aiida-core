@@ -517,7 +517,8 @@ class Transport(abc.ABC):
                 errenc = 'utf-8'
             return (retval, stdout_bytes.decode(outenc), stderr_bytes.decode(errenc))
         else:
-            return (retval, stdout_bytes.decode(encoding), stderr_bytes.decode(encoding))
+            return (retval, stdout_bytes.decode(encoding, errors='replace'),
+                    stderr_bytes.decode(encoding, errors='replace'))
 
     @abc.abstractmethod
     def get(self, remotepath: TransportPath, localpath: TransportPath, *args, **kwargs):
