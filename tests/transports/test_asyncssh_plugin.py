@@ -416,8 +416,26 @@ class TestScpCommandConfiguration:
         
         async def mock_execute(commands, stdin=None, timeout=None):
             executed_commands.append(commands)
-            # For path_exists and other checks, return success
+            # For path_exists and other checks, return appropriate responses
             if commands[0] == 'ssh':
+                command_str = ' '.join(commands)
+                
+                # For glob operations, return fake file data
+                if 'find' in command_str and '-print0' in command_str:
+                    return (0, '/scratch2/a/./out/file1.txt\0/scratch2/a/./out/file2.txt', '')
+                
+                # For path existence checks
+                elif 'test -e' in command_str:
+                    return (0, '', '')  # Path exists
+                elif 'test -f' in command_str:
+                    return (1, '', 'Not a file')  # Not a regular file (it's a directory)
+                elif 'test -d' in command_str:
+                    return (0, '', '')  # It's a directory
+                
+                # For ls commands
+                elif 'ls' in command_str:
+                    return (0, '', '')  # Empty directory listing
+                
                 return (0, '', '')
             # For scp command, return success
             elif commands[0] == 'scp':
@@ -428,7 +446,7 @@ class TestScpCommandConfiguration:
 
         # Try to copy a file (this will fail but we just want to capture the command)
         try:
-            await transport.async_backend.copy('/scratch2/dadvmod/mat/8a/76/f5fd-e518-45c3-bed3-1817021141ab/./out/*', '/scratch2/dadvmod/mat/db/f0/a23d-60a6-4300-8dc3-95dd21f72f7e/out', False, False, False)
+            await transport.async_backend.copy('/scratch2/a/./out/*', '/scratch2/b/out', False, False, False)
         except:
             pass
         
