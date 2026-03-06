@@ -630,7 +630,16 @@ class _OpenSSH(_AsynchronousSSHBackend):
 
     async def glob(self, path: str, ignore_nonexisting: bool = True):
         escaped_path = self._escape_for_glob(path)
-        commands = self.ssh_command_generator(f'find {escaped_path} -maxdepth 0')
+        # Use -print0 to handle filenames with spaces, newlines, or other special characters
+        raw_command = f'find {escaped_path} -maxdepth 0 -print0'
+        
+        # Escape special characters for the outer SSH shell
+        escaped_command = raw_command.replace('$', r'\$')
+        escaped_command = escaped_command.replace('`', '\\`')
+        escaped_command = escaped_command.replace('"', '\\"')
+        treated_raw_command = f'"{escaped_command}"'
+        commands = ['ssh', self.machine, self.bash_command + treated_raw_command]
+        
         returncode, stdout, stderr = await self.openssh_execute(commands)
 
         if returncode != 0:
@@ -639,7 +648,10 @@ class _OpenSSH(_AsynchronousSSHBackend):
                 return []
             raise OSError(f'Either the path {path} does not exist, or a matching file/folder not found.')
 
-        return list(stdout.strip().split())
+        # Parse null-separated output to handle filenames with any characters
+        if stdout:
+            return stdout.strip('\0').split('\0')
+        return []
 
     async def symlink(self, source: str, destination: str):
         """Create a single link from source to destination.
@@ -691,13 +703,15 @@ class _OpenSSH(_AsynchronousSSHBackend):
             raise OSError(f'Failed to remove path: {path}')
 
     async def listdir(self, path: str):
-        commands = self.ssh_command_generator('ls {}', paths=[path])
+        # Use -1 flag to list one file per line, which handles filenames with spaces
+        commands = self.ssh_command_generator('ls -1 {}', paths=[path])
         # '-d' is used prevents recursive listing of directories.
         # This is useful when 'path' includes glob patterns.
         returncode, stdout, stderr = await self.openssh_execute(commands)
         if returncode != 0:
             raise FileNotFoundError
-        return list(stdout.strip().split())
+        # Split by newlines instead of whitespace to handle filenames with spaces
+        return [line for line in stdout.strip().split('\n') if line]
 
     async def isdir(self, path: str):
         commands = self.ssh_command_generator('test -d {}', paths=[path])
@@ -810,8 +824,25 @@ class _OpenSSH(_AsynchronousSSHBackend):
             # physical files, we generalize this by executing a 'cp -rL' command
             # directly via an SSH connection.
             # cp treats paths as a sequence of bytes, so we can prevent escaping to allow for shell expansion
-            commands = self.ssh_command_generator(f'cp -rL {remotesource} {remotedestination}')
-            returncode, stdout, stderr = await self.openssh_execute(commands)
+            
+            # Handle glob patterns by copying each file individually
+            if has_magic(remotesource):
+                to_copy_list = await self.glob(remotesource)
+                
+                if len(to_copy_list) > 1:
+                    if not await self.path_exists(remotedestination) or await self.isfile(remotedestination):
+                        raise OSError("Can't copy more than one file in the same destination file")
+                
+                for file in to_copy_list:
+                    commands = self.ssh_command_generator('cp -rL {} {}', [file, remotedestination])
+                    returncode, stdout, stderr = await self.openssh_execute(commands)
+                    if returncode != 0:
+                        raise OSError(f'Failed to copy from {file} to {remotedestination}: {stderr}')
+            else:
+                commands = self.ssh_command_generator('cp -rL {} {}', [remotesource, remotedestination])
+                returncode, stdout, stderr = await self.openssh_execute(commands)
+                if returncode != 0:
+                    raise OSError(f'Failed to copy from {remotesource} to {remotedestination}: {stderr}')
         else:
             returncode, stdout, stderr = await self.openssh_execute(
                 [
