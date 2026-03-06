@@ -1287,6 +1287,7 @@ def test_exec_with_stdin_filelike_bytes_decoding(custom_transport):
 
     test_string = b'some_test bytes with non-unicode -> \xfa'
     stdin = io.BytesIO(test_string)
+    # NB: I found at least one production HPC with spurious non-utf-8 output from scheduler queue command in the stdout!!
     with custom_transport as transport:
         with pytest.raises(UnicodeDecodeError):
             transport.exec_command_wait('cat', stdin=stdin, encoding='utf-8')
@@ -1735,3 +1736,44 @@ def test_glob(custom_transport, tmp_path_local):
         g_list = transport.glob(str(tmp_path_local) + '/folder2/aiida.pdos*')
         paths = [str(tmp_path_local.joinpath('folder2/aiida.pdos_atm#2(Al)_wfc#2(p)'))]
         assert sorted(paths) == sorted(g_list)
+
+
+def test_invalid_utf8_handling(custom_transport, tmp_path_remote):
+    """Test that transport methods handle invalid UTF-8 sequences gracefully."""
+    import sys
+    
+    with custom_transport as transport:
+        # Create a file with invalid UTF-8 content
+        test_file = tmp_path_remote / 'invalid_utf8.txt'
+        
+        # Write content with invalid UTF-8 byte sequence (0xE0 without continuation bytes)
+        invalid_content = b'Valid UTF-8 text: \xe0'
+        
+        with open(test_file, 'wb') as f:
+            f.write(invalid_content)
+        
+        # Test 1: The file should exist and be readable
+        assert transport.path_exists(test_file)
+        
+        # Test 2: Command execution with invalid UTF-8 output
+        # This simulates what happens when PBS returns invalid UTF-8
+        if hasattr(transport, 'exec_command_wait'):
+            # Create a script that outputs invalid UTF-8
+            script_path = tmp_path_remote / 'test_script.sh'
+            script_content = b'#!/bin/bash\necho "Valid text\xe0"'
+            
+            with open(script_path, 'wb') as f:
+                f.write(script_content)
+            
+            transport.chmod(script_path, 0o755)
+            
+            try:
+                # This should not crash with UnicodeDecodeError
+                retval, stdout, stderr = transport.exec_command_wait(f'bash {script_path}')
+                
+                # The output should be strings (either with replacement chars or successfully decoded)
+                assert isinstance(stdout, str), f"stdout should be string, got {type(stdout)}"
+                assert isinstance(stderr, str), f"stderr should be string, got {type(stderr)}"
+                
+            except UnicodeDecodeError as e:
+                raise AssertionError(f"Transport should handle invalid UTF-8 in command output: {e}")
