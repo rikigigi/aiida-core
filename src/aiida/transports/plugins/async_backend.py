@@ -479,11 +479,13 @@ class _OpenSSH(_AsynchronousSSHBackend):
         bash_command: str,
         use_sftp: bool,
         scp_command: list[str] | None = None,
+        ssh_failure_code: int | None = None,
     ):
         super().__init__(machine, data_machine, logger, bash_command)
         self.use_sftp = use_sftp
         self.scp_options: list[str] = []
         self.scp_command = scp_command if scp_command is not None else ['scp']
+        self.ssh_failure_code = ssh_failure_code if ssh_failure_code is not None else 255
 
         # Check if the local OpenSSH client version is 9.0 or higher.
         # OpenSSH 9.0+ changed scp to use SFTP protocol by default instead of RCP.
@@ -549,6 +551,10 @@ class _OpenSSH(_AsynchronousSSHBackend):
             # Fall back to latin-1 which can decode any byte, or use replacement characters
             stdout_str = stdout.decode('utf-8', errors='replace')
             stderr_str = stderr.decode('utf-8', errors='replace')
+
+        if process.returncode == self.ssh_failure_code:
+            raise asyncssh.Error(process.returncode, f"Stdout: {stdout_str}\nStderr: {stderr_str}")
+
         return process.returncode, stdout_str, stderr_str
 
     def _escape_for_rcp(self, path: str) -> str:
