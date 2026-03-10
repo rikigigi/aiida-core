@@ -128,9 +128,8 @@ class AsyncSshTransport(AsyncTransport):
                 'type': int,
                 'default': _DEFAULT_ssh_failure_code,
                 'prompt': 'Exit code to track ssh failures',
-                'help': 'The exit code to track ssh failures. Default is 255',
-                'non_interactive_default': True,
-                'callback': validate_positive_number,
+                'help': f'The exit code to track ssh failures. {_DEFAULT_ssh_failure_code}',
+                'non_interactive_default': True
             },
         ),
     ]
