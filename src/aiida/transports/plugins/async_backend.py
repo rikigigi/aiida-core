@@ -485,9 +485,10 @@ class _OpenSSH(_AsynchronousSSHBackend):
     Note: This class is not part of the public API and should not be used directly.
     """
 
-    def __init__(self, machine: str, logger: logging.LoggerAdapter, bash_command: str, scp_command: list = None):
+    def __init__(self, machine: str, logger: logging.LoggerAdapter, bash_command: str, scp_command: list = None, ssh_failure_code: int = None):
         super().__init__(machine, logger, bash_command)
         self.scp_command = scp_command if scp_command is not None else ['scp']
+        self.ssh_failure_code = ssh_failure_code if ssh_failure_code is not None else 255
 
     async def openssh_execute(self, commands, stdin: Optional[str] = None, timeout: Optional[float] = None):
         """
@@ -523,6 +524,10 @@ class _OpenSSH(_AsynchronousSSHBackend):
             # Fall back to latin-1 which can decode any byte, or use replacement characters
             stdout_str = stdout.decode('utf-8', errors='replace')
             stderr_str = stderr.decode('utf-8', errors='replace')
+
+        if process.returncode == self.ssh_failure_code:
+            raise asyncssh.Error(process.returncode, f"Stdout: {stdout_str}\nStderr: {stderr_str}")
+
         return process.returncode, stdout_str, stderr_str
 
     def _escape_for_rcp(self, path: str) -> str:
@@ -679,7 +684,7 @@ class _OpenSSH(_AsynchronousSSHBackend):
         if stderr:
             # this should not happen, but just in case for debugging
             self.logger.debug(f'Unexpected stderr: {stderr}')
-            raise OSError(stderr)
+
         return returncode == 0
 
     async def rmtree(self, path: str):

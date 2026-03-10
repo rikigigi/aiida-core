@@ -54,6 +54,7 @@ class AsyncSshTransport(AsyncTransport):
     """Transport plugin via SSH, asynchronously."""
 
     _DEFAULT_max_io_allowed = 8
+    _DEFAULT_ssh_failure_code = 255
 
     # note, I intentionally wanted to keep connection parameters as simple as possible.
     _valid_auth_options = [
@@ -121,6 +122,17 @@ class AsyncSshTransport(AsyncTransport):
                 'non_interactive_default': True,
             },
         ),
+        (
+            'ssh_failure_code',
+            {
+                'type': int,
+                'default': _DEFAULT_ssh_failure_code,
+                'prompt': 'Exit code to track ssh failures',
+                'help': 'The exit code to track ssh failures. Default is 255',
+                'non_interactive_default': True,
+                'callback': validate_positive_number,
+            },
+        ),
     ]
 
     @classmethod
@@ -158,10 +170,13 @@ class AsyncSshTransport(AsyncTransport):
             scp_command = ['scp']  # fallback to default
         self.scp_command = scp_command
 
+        self.ssh_failure_code = kwargs.pop('ssh_failure_code', self._DEFAULT_ssh_failure_code)
+
+
         if kwargs.get('backend') == 'openssh':
             from .async_backend import _OpenSSH
 
-            self.async_backend = _OpenSSH(self.machine, self.logger, self._bash_command_str, self.scp_command)
+            self.async_backend = _OpenSSH(self.machine, self.logger, self._bash_command_str, self.scp_command, self.ssh_failure_code)
         else:
             # default backend is asyncssh
             from .async_backend import _AsyncSSH
