@@ -1153,6 +1153,63 @@ class TestWorkchain:
         assert proc.node.uuid == proc.node.base.attributes.get('_root_id', None)
         assert len(results) == 3
 
+    def test_root_id_propagation_in_logs(self):
+        val1 = Int(5).store()
+        val2 = Int(6).store()
+
+        class SimpleWc1(WorkChain):
+            @classmethod
+            def define(cls, spec):
+                super().define(spec)
+                spec.outline(cls.result)
+                spec.outputs.dynamic = True
+
+            def result(self):
+                self.report('Done')
+                self.out('result', val1)
+
+        class SimpleWc2(WorkChain):
+            @classmethod
+            def define(cls, spec):
+                super().define(spec)
+                spec.outline(cls.result)
+                spec.outputs.dynamic = True
+
+            def result(self):
+                self.report('Done')
+                self.out('result', val2)
+
+        class Workchain(WorkChain):
+            @classmethod
+            def define(cls, spec):
+                super().define(spec)
+                spec.outline(cls.begin, cls.result)
+
+            def begin(self):
+                self.to_context(**{'sub1.workchains': append_(self.submit(SimpleWc1))})
+                return ToContext(**{'sub1.workchains': append_(self.submit(SimpleWc2))})
+
+            def result(self):
+                self.report('Done')
+                assert self.ctx.sub1.workchains[0].outputs.result == val1
+                assert self.ctx.sub1.workchains[1].outputs.result == val2
+
+        proc = run_and_check_success(Workchain)
+
+        from aiida.orm import QueryBuilder, Log
+        qb = QueryBuilder()
+        qb.append(
+            Log,
+            filters={
+                'levelname': 'REPORT',
+                '_metadata._root_id': proc.node.uuid
+            }
+        )
+
+        results = qb.all()
+
+        assert len(results) == 3
+
 @pytest.mark.requires_rmq
 class TestWorkChainAbort:
     """Test the functionality to abort a workchain"""

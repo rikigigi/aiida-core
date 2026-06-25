@@ -40,7 +40,7 @@ class DBLogHandler(logging.Handler):
             raise
 
 
-def get_dblogger_extra(node):
+def get_dblogger_extra(node, **kwargs):
     """Return the additional information necessary to attach any log records to the given node instance.
 
     :param node: a Node instance
@@ -52,10 +52,10 @@ def get_dblogger_extra(node):
     if not isinstance(node, Node) or not node.is_stored:
         return {}
 
-    return {'dbnode_id': node.pk, 'backend': node.backend}
+    return {'dbnode_id': node.pk, 'backend': node.backend, **kwargs}
 
 
-def create_logger_adapter(logger, node):
+def create_logger_adapter(logger, node, **kwargs):
     """Create a logger adapter for the given Node instance.
 
     :param logger: the logger to adapt
@@ -68,4 +68,4 @@ def create_logger_adapter(logger, node):
     if not isinstance(node, Node):
         raise TypeError('node should be an instance of `Node`')
 
-    return logging.LoggerAdapter(logger=logger, extra=get_dblogger_extra(node))
+    return logging.LoggerAdapter(logger=logger, extra=get_dblogger_extra(node, **kwargs))

@@ -220,7 +220,11 @@ class ProcessNode(Sealable, Node):
 
         # First time the property is called after the node is stored, create the logger adapter
         if not hasattr(self, '_logger_adapter'):
-            self._logger_adapter = create_logger_adapter(self._logger, self)
+            root_id = self.base.attributes.get('_root_id', None)
+            kwargs = {}
+            if root_id:
+                kwargs = {'_root_id': root_id}
+            self._logger_adapter = create_logger_adapter(self._logger, self, **kwargs)
 
         return self._logger_adapter
 
