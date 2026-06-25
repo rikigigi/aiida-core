@@ -652,6 +652,12 @@ class Process(PlumpyProcess):
 
         """
         message = f'[{self.node.pk}|{self.__class__.__name__}|{inspect.stack()[1][3]}]: {msg}'
+
+        root_id = self.node.base.attributes.get('_root_id', None)
+        if root_id:
+            kwargs.setdefault('extra', {})
+            kwargs['extra']['_root_id'] = root_id
+
         self.logger.log(LOG_LEVEL_REPORT, message, *args, **kwargs)
 
     def _create_and_setup_db_record(self) -> Union[int, UUID]:
@@ -776,6 +782,14 @@ class Process(PlumpyProcess):
         self._setup_metadata(copy.copy(dict(self.inputs.metadata)))
         self._setup_version_info()
         self._setup_inputs()
+
+        # If there is no parent we consider the current node as the root
+        root_id = self.node.uuid
+        if parent_calc:
+            root_id = parent_calc.base.attributes.get('_root_id', None)
+
+        self.node.base.attributes.set('_root_id', root_id)
+
 
     def _setup_version_info(self) -> dict[str, Any]:
         """Store relevant plugin version information."""
