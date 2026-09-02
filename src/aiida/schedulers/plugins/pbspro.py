@@ -57,6 +57,7 @@ class PbsproScheduler(PbsBaseClass):
         max_memory_kb: int | None,
         max_wallclock_seconds: int | None,
         num_gpus_per_machine: int | None,
+        ompthreads: int | None
     ) -> list[str]:
         """Return the lines for machines, memory and wallclock relative
         to pbspro.
@@ -73,6 +74,8 @@ class PbsproScheduler(PbsBaseClass):
             select_string += f':ncpus={num_cores_per_machine}'
         if num_gpus_per_machine is not None:
             select_string += f':ngpus={num_gpus_per_machine}'
+        if ompthreads is not None:
+            select_string += f":ompthreads={ompthreads}"
 
         if max_wallclock_seconds is not None:
             try:

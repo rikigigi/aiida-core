@@ -131,6 +131,7 @@ class PbsBaseClass(BashCliScheduler):
         max_memory_kb: int | None,
         max_wallclock_seconds: int | None,
         num_gpus_per_machine: int | None,
+        ompthreads: int | None
     ) -> list[str]:
         """Return a set a list of lines (possibly empty) with the header
         lines relative to:
@@ -141,6 +142,7 @@ class PbsBaseClass(BashCliScheduler):
         * max_memory_kb
         * max_wallclock_seconds
         * num_gpus_per_machine
+        * ompthreads
 
         This is done in an external function because it may change in
         different subclasses.
@@ -299,6 +301,7 @@ class PbsBaseClass(BashCliScheduler):
             max_memory_kb=job_tmpl.max_memory_kb,
             max_wallclock_seconds=job_tmpl.max_wallclock_seconds,
             num_gpus_per_machine=job_tmpl.job_resource.num_gpus_per_machine,
+            ompthreads=job_tmpl.job_resource.ompthreads
         )
 
         lines += resource_lines
