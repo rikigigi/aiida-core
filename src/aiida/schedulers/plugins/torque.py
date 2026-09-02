@@ -48,6 +48,7 @@ class TorqueScheduler(PbsBaseClass):
         max_memory_kb: int | None,
         max_wallclock_seconds: int | None,
         num_gpus_per_machine: int | None = None,
+        ompthreads: int | None = None,
     ) -> list[str]:
         """Return the lines for machines, memory and wallclock relative
         to torque.
@@ -65,6 +66,9 @@ class TorqueScheduler(PbsBaseClass):
         # Add GPU support for Torque (similar to PBSPro)
         if num_gpus_per_machine is not None:
             select_string += f':gpus={num_gpus_per_machine}'
+
+        if ompthreads is not None:
+            select_string += f':ompthreads={ompthreads}'
 
         if max_wallclock_seconds is not None:
             try:

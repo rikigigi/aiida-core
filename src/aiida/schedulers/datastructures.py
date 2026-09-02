@@ -210,6 +210,7 @@ class NodeNumberGpuJobResource(NodeNumberJobResource):
         'num_cores_per_machine',
         'num_cores_per_mpiproc',
         'num_gpus_per_machine',
+        'ompthreads',
     )
 
     if TYPE_CHECKING:
@@ -218,6 +219,7 @@ class NodeNumberGpuJobResource(NodeNumberJobResource):
         num_cores_per_machine: int
         num_cores_per_mpiproc: int
         num_gpus_per_machine: int
+        ompthreads: int
 
     @classmethod
     def validate_resources(cls, **kwargs):
@@ -235,6 +237,14 @@ class NodeNumberGpuJobResource(NodeNumberJobResource):
                 raise ValueError('`num_gpus_per_machine` must be an integer when specified')
             if resources.num_gpus_per_machine < 0:
                 raise ValueError('`num_gpus_per_machine` must be greater than or equal to zero.')
+
+        if resources.ompthreads is not None:
+            try:
+                resources.ompthreads = int(resources.ompthreads)
+            except ValueError:
+                raise ValueError('`ompthreads` must be an integer when specified')
+            if resources.ompthreads < 1:
+                raise ValueError('`ompthreads` must be greater than or equal to one.')
         return resources
 
 class ParEnvJobResource(JobResource):
