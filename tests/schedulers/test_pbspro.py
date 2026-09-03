@@ -11,6 +11,9 @@
 import unittest
 import uuid
 
+import pytest
+
+from aiida.engine import CalcJob
 from aiida.schedulers.datastructures import JobState
 from aiida.schedulers.plugins.pbspro import PbsproScheduler
 
@@ -1072,3 +1075,59 @@ class TestSubmitScript(unittest.TestCase):
         submit_script_text = scheduler.get_submit_script(job_tmpl)
         assert '#PBS -r y' not in submit_script_text
         assert '#PBS -r n' in submit_script_text
+
+
+def test_parse_output_out_of_walltime():
+    """Test that `parse_output` returns `ERROR_SCHEDULER_OUT_OF_WALLTIME` when PBS kills the job for walltime."""
+    scheduler = PbsproScheduler()
+    stderr = (
+        '=>> PBS: job killed: walltime 7225 exceeded limit 7200\n'
+        'node1.hpc: rank 0 died from signal 15\n'
+    )
+
+    exit_code = scheduler.parse_output(None, '', stderr)
+    assert exit_code == CalcJob.exit_codes.ERROR_SCHEDULER_OUT_OF_WALLTIME
+
+
+@pytest.mark.parametrize(
+    'stderr',
+    [
+        '=>> PBS: job killed: mem 123456kb exceeded limit 120000kb\n',
+        '=>> PBS: job killed: vmem 123456kb exceeded limit 120000kb\n',
+    ],
+)
+def test_parse_output_out_of_memory(stderr):
+    """Test that `parse_output` returns `ERROR_SCHEDULER_OUT_OF_MEMORY` when PBS kills the job for exceeding memory."""
+    scheduler = PbsproScheduler()
+
+    exit_code = scheduler.parse_output(None, '', stderr)
+    assert exit_code == CalcJob.exit_codes.ERROR_SCHEDULER_OUT_OF_MEMORY
+
+@pytest.mark.parametrize(
+    'stderr',
+    [
+        '=>> PBS: job killed: node down\n',
+        '=>> PBS: job killed: communication failure\n',
+        '=>> PBS: job killed: execution host unavailable\n',
+    ],
+)
+def test_parse_output_node_failure(stderr):
+    """Test that `parse_output` returns `ERROR_SCHEDULER_NODE_FAILURE` when PBS kills the job for node failures."""
+    scheduler = PbsproScheduler()
+
+    exit_code = scheduler.parse_output(None, '', stderr)
+    assert exit_code == CalcJob.exit_codes.ERROR_SCHEDULER_NODE_FAILURE
+
+@pytest.mark.parametrize(
+    'detailed_job_info, stdout, stderr',
+    [
+        (None, '', ''),  # No output at all
+        ({'retval': 0, 'stdout': 'Job: 123.pbsserver\n', 'stderr': ''}, '', ''),  # Normal `tracejob` output
+        (None, '', 'some harmless warning\n'),  # Unrelated `stderr` content
+    ],
+)
+def test_parse_output_valid(detailed_job_info, stdout, stderr):
+    """Test that `PbsproScheduler.parse_output` returns `None` when no known error is detected."""
+    scheduler = PbsproScheduler()
+
+    assert scheduler.parse_output(detailed_job_info, stdout, stderr) is None

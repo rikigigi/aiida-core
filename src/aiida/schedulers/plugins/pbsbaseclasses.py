@@ -11,8 +11,10 @@
 from __future__ import annotations
 
 import logging
+import re
 
 from aiida.common.escaping import escape_for_bash
+from aiida.common.lang import type_check
 from aiida.schedulers import SchedulerError, SchedulerParsingError
 from aiida.schedulers.datastructures import JobInfo, JobState, MachineInfo, NodeNumberGpuJobResource
 
@@ -722,3 +724,41 @@ class PbsBaseClass(BashCliScheduler):
             _LOGGER.warning(f'in _parse_kill_output there was some text in stdout: {stdout}')
 
         return True
+
+    def parse_output(self, detailed_job_info=None, stdout=None, stderr=None):
+        """Parse the output of the scheduler.
+
+        :param detailed_job_info: dictionary with the output returned by the `Scheduler.get_detailed_job_info` command.
+            This should contain the keys `retval`, `stdout` and `stderr` corresponding to the return value, stdout and
+            stderr returned by the accounting command executed for a specific job id.
+        :param stdout: string with the output written by the scheduler to stdout.
+        :param stderr: string with the output written by the scheduler to stderr.
+        :return: None or an instance of :class:`aiida.engine.processes.exit_code.ExitCode`.
+        :raises TypeError or ValueError: if the passed arguments have incorrect type or value.
+        """
+        from aiida.engine import CalcJob
+
+
+        # Alternatively, match known error messages written by PBS to the ``stderr`` descriptor of the job. PBSPro and
+        # Torque both write a line with the format ``=>> PBS: job killed: <reason>`` when a job is killed by the
+        # scheduler, for example:
+        #
+        #   =>> PBS: job killed: walltime 7225 exceeded limit 7200
+        #   =>> PBS: job killed: mem 123456kb exceeded limit 120000kb
+        #   =>> PBS: job killed: vmem 123456kb exceeded limit 120000kb
+        #   =>> PBS: job killed: node down
+        #   =>> PBS: job killed: communication failure
+        #   =>> PBS: job killed: execution host unavailable
+        if stderr is not None:
+            type_check(stderr, str)
+
+            if re.search(r'job killed:\s*walltime \d+ exceeded limit \d+', stderr, re.IGNORECASE):
+                return CalcJob.exit_codes.ERROR_SCHEDULER_OUT_OF_WALLTIME
+
+            if re.search(r'job killed:\s*v?mem \d+kb exceeded limit \d+kb', stderr, re.IGNORECASE):
+                return CalcJob.exit_codes.ERROR_SCHEDULER_OUT_OF_MEMORY
+
+            if re.search(r'job killed:\s(?:node down|communication failure|execution host unavailable)', stderr, re.IGNORECASE):
+                return CalcJob.exit_codes.ERROR_SCHEDULER_NODE_FAILURE
+
+        return None
