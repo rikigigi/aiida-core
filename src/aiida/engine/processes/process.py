@@ -65,6 +65,7 @@ from .utils import prune_mapping
 
 if TYPE_CHECKING:
     from aiida.engine.runners import Runner
+    from aiida.orm.implementation import StorageBackend
 
 __all__ = ('Process', 'ProcessState')
 
@@ -76,6 +77,7 @@ class Process(PlumpyProcess):
     """
 
     _cancelling_scheduler_job: asyncio.Task | None = None
+    _backend: Optional['StorageBackend'] = None
     _node_class = orm.ProcessNode
     _spec_class = ProcessSpec
 
@@ -149,12 +151,14 @@ class Process(PlumpyProcess):
         return ProcessBuilder(cls)
 
     @classmethod
-    def get_or_create_db_record(cls) -> orm.ProcessNode:
+    def get_or_create_db_record(cls, backend: Optional['StorageBackend'] = None) -> orm.ProcessNode:
         """Create a process node that represents what happened in this process.
 
+        :param backend: the storage backend to use when creating the process node. If ``None``, the storage of the
+            currently loaded profile is used.
         :return: A process node
         """
-        return cls._node_class()
+        return cls._node_class(backend=backend)
 
     def __init__(
         self,
@@ -163,6 +167,7 @@ class Process(PlumpyProcess):
         runner: Optional['Runner'] = None,
         parent_pid: Optional[int] = None,
         enable_persistence: bool = True,
+        backend: Optional['StorageBackend'] = None,
     ) -> None:
         """Process constructor.
 
@@ -171,11 +176,14 @@ class Process(PlumpyProcess):
         :param runner: process runner
         :param parent_pid: id of parent process
         :param enable_persistence: whether to persist this process
+        :param backend: the storage backend to use when creating the process node. If ``None``, the storage of the
+            currently loaded profile is used.
 
         """
         from aiida.manage import manager
 
         self._runner = runner if runner is not None else manager.get_manager().get_runner()
+        self._backend = backend
         # assert self._runner.communicator is not None, 'communicator not set for runner'
 
         super().__init__(
@@ -666,7 +674,7 @@ class Process(PlumpyProcess):
         :return: the uuid or pk of the process
 
         """
-        self._node = self.get_or_create_db_record()
+        self._node = self.get_or_create_db_record(backend=self._backend)
         self._setup_db_record()
         if self.metadata.store_provenance:
             try:
@@ -789,7 +797,6 @@ class Process(PlumpyProcess):
             root_id = parent_calc.base.attributes.get('_root_id', None)
 
         self.node.base.attributes.set('_root_id', root_id)
-
 
     def _setup_version_info(self) -> dict[str, Any]:
         """Store relevant plugin version information."""

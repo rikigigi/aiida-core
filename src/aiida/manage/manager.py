@@ -425,6 +425,18 @@ class Manager:
 
         return self._process_controller
 
+    @property
+    def runner(self) -> Optional['Runner']:
+        """Return the current runner without creating one if it has not been created yet.
+
+        In contrast to :meth:`get_runner`, which lazily creates the runner on first access, this property merely
+        returns the runner if it already exists and ``None`` otherwise. This is useful when one wants to verify
+        against the runner of this manager without forcing its creation.
+
+        :return: the current runner or ``None`` if it has not been created yet
+        """
+        return self._runner
+
     def get_runner(self, **kwargs) -> 'Runner':
         """Return a runner that is based on the current profile settings and can be used globally by the code.
 

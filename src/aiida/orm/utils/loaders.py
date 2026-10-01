@@ -18,6 +18,7 @@ from aiida.orm.querybuilder import QueryBuilder
 
 if TYPE_CHECKING:
     from aiida.orm import Code, Computer, Group, Node
+    from aiida.orm.implementation import StorageBackend
 
 __all__ = (
     'CalculationEntityLoader',
@@ -36,7 +37,14 @@ __all__ = (
 
 
 def load_entity(
-    entity_loader=None, identifier=None, pk=None, uuid=None, label=None, sub_classes=None, query_with_dashes=True
+    entity_loader=None,
+    identifier=None,
+    pk=None,
+    uuid=None,
+    label=None,
+    sub_classes=None,
+    query_with_dashes=True,
+    backend: 'StorageBackend | None' = None,
 ):
     """Load an entity instance by one of its identifiers: pk, uuid or label
 
@@ -50,6 +58,7 @@ def load_entity(
     :param sub_classes: an optional tuple of orm classes to narrow the queryset. Each class should be a strict sub class
         of the ORM class of the given entity loader.
     :param bool query_with_dashes: allow to query for a uuid with dashes
+    :param backend: the storage backend to query; defaults to the storage of the currently loaded profile
     :returns: the Code instance
     :raise ValueError: if none or more than one of the identifiers are supplied
     :raise TypeError: if the provided identifier has the wrong type
@@ -91,11 +100,13 @@ def load_entity(
         identifier_type = None
 
     return entity_loader.load_entity(
-        identifier, identifier_type, sub_classes=sub_classes, query_with_dashes=query_with_dashes
+        identifier, identifier_type, sub_classes=sub_classes, query_with_dashes=query_with_dashes, backend=backend
     )
 
 
-def load_code(identifier=None, pk=None, uuid=None, label=None, sub_classes=None, query_with_dashes=True) -> 'Code':
+def load_code(
+    identifier=None, pk=None, uuid=None, label=None, sub_classes=None, query_with_dashes=True, backend=None
+) -> 'Code':
     """Load a Code instance by one of its identifiers: pk, uuid or label
 
     If the type of the identifier is unknown simply pass it without a keyword and the loader will attempt to
@@ -108,6 +119,7 @@ def load_code(identifier=None, pk=None, uuid=None, label=None, sub_classes=None,
     :param sub_classes: an optional tuple of orm classes to narrow the queryset. Each class should be a strict sub class
         of the ORM class of the given entity loader.
     :param bool query_with_dashes: allow to query for a uuid with dashes
+    :param backend: the storage backend to query; defaults to the storage of the currently loaded profile
     :return: the Code instance
     :raise ValueError: if none or more than one of the identifiers are supplied
     :raise TypeError: if the provided identifier has the wrong type
@@ -122,11 +134,12 @@ def load_code(identifier=None, pk=None, uuid=None, label=None, sub_classes=None,
         label=label,
         sub_classes=sub_classes,
         query_with_dashes=query_with_dashes,
+        backend=backend,
     )
 
 
 def load_computer(
-    identifier=None, pk=None, uuid=None, label=None, sub_classes=None, query_with_dashes=True
+    identifier=None, pk=None, uuid=None, label=None, sub_classes=None, query_with_dashes=True, backend=None
 ) -> 'Computer':
     """Load a Computer instance by one of its identifiers: pk, uuid or label
 
@@ -140,6 +153,7 @@ def load_computer(
     :param sub_classes: an optional tuple of orm classes to narrow the queryset. Each class should be a strict sub class
         of the ORM class of the given entity loader.
     :param bool query_with_dashes: allow to query for a uuid with dashes
+    :param backend: the storage backend to query; defaults to the storage of the currently loaded profile
     :return: the Computer instance
     :raise ValueError: if none or more than one of the identifiers are supplied
     :raise TypeError: if the provided identifier has the wrong type
@@ -154,10 +168,13 @@ def load_computer(
         label=label,
         sub_classes=sub_classes,
         query_with_dashes=query_with_dashes,
+        backend=backend,
     )
 
 
-def load_group(identifier=None, pk=None, uuid=None, label=None, sub_classes=None, query_with_dashes=True) -> 'Group':
+def load_group(
+    identifier=None, pk=None, uuid=None, label=None, sub_classes=None, query_with_dashes=True, backend=None
+) -> 'Group':
     """Load a Group instance by one of its identifiers: pk, uuid or label
 
     If the type of the identifier is unknown simply pass it without a keyword and the loader will attempt to
@@ -170,6 +187,7 @@ def load_group(identifier=None, pk=None, uuid=None, label=None, sub_classes=None
     :param sub_classes: an optional tuple of orm classes to narrow the queryset. Each class should be a strict sub class
         of the ORM class of the given entity loader.
     :param bool query_with_dashes: allow to query for a uuid with dashes
+    :param backend: the storage backend to query; defaults to the storage of the currently loaded profile
     :return: the Group instance
     :raise ValueError: if none or more than one of the identifiers are supplied
     :raise TypeError: if the provided identifier has the wrong type
@@ -184,10 +202,13 @@ def load_group(identifier=None, pk=None, uuid=None, label=None, sub_classes=None
         label=label,
         sub_classes=sub_classes,
         query_with_dashes=query_with_dashes,
+        backend=backend,
     )
 
 
-def load_node(identifier=None, pk=None, uuid=None, label=None, sub_classes=None, query_with_dashes=True) -> 'Node':
+def load_node(
+    identifier=None, pk=None, uuid=None, label=None, sub_classes=None, query_with_dashes=True, backend=None
+) -> 'Node':
     """Load a node by one of its identifiers: pk or uuid. If the type of the identifier is unknown
     simply pass it without a keyword and the loader will attempt to infer the type
 
@@ -198,6 +219,7 @@ def load_node(identifier=None, pk=None, uuid=None, label=None, sub_classes=None,
     :param sub_classes: an optional tuple of orm classes to narrow the queryset. Each class should be a strict sub class
         of the ORM class of the given entity loader.
     :param bool query_with_dashes: allow to query for a uuid with dashes
+    :param backend: the storage backend to query; defaults to the storage of the currently loaded profile
     :returns: the node instance
     :raise ValueError: if none or more than one of the identifiers are supplied
     :raise TypeError: if the provided identifier has the wrong type
@@ -212,6 +234,7 @@ def load_node(identifier=None, pk=None, uuid=None, label=None, sub_classes=None,
         label=label,
         sub_classes=sub_classes,
         query_with_dashes=query_with_dashes,
+        backend=backend,
     )
 
 
@@ -267,7 +290,7 @@ class OrmEntityLoader:
 
     @classmethod
     @abstractmethod
-    def _get_query_builder_label_identifier(cls, identifier, classes, operator='==', project='*'):
+    def _get_query_builder_label_identifier(cls, identifier, classes, operator='==', project='*', backend=None):
         """Return the query builder instance that attempts to map the identifier onto an entity of the orm class,
         defined for this loader class, interpreting the identifier as a LABEL like identifier
 
@@ -275,6 +298,7 @@ class OrmEntityLoader:
         :param classes: a tuple of orm classes to which the identifier should be mapped
         :param operator: the operator to use in the query
         :param project: the property or properties to project for entities matching the query
+        :param backend: the storage backend to query; defaults to the storage of the currently loaded profile
         :returns: the query builder instance
         :raises ValueError: if the identifier is invalid
         :raises aiida.common.NotExistent: if the orm base class does not support a LABEL like identifier
@@ -282,27 +306,29 @@ class OrmEntityLoader:
         raise NotImplementedError
 
     @classmethod
-    def _get_query_builder_id_identifier(cls, identifier, classes):
+    def _get_query_builder_id_identifier(cls, identifier, classes, backend=None):
         """Return the query builder instance that attempts to map the identifier onto an entity of the orm class,
         defined for this loader class, interpreting the identifier as an ID like identifier
 
         :param identifier: the ID identifier
         :param classes: a tuple of orm classes to which the identifier should be mapped
+        :param backend: the storage backend to query; defaults to the storage of the currently loaded profile
         :returns: the query builder instance
         """
-        builder = QueryBuilder()
+        builder = QueryBuilder(backend=backend)
         builder.append(cls=classes, tag='entity', project=['*'])
         builder.add_filter('entity', {'id': identifier})
 
         return builder
 
     @classmethod
-    def _get_query_builder_uuid_identifier(cls, identifier, classes, query_with_dashes):
+    def _get_query_builder_uuid_identifier(cls, identifier, classes, query_with_dashes, backend=None):
         """Return the query builder instance that attempts to map the identifier onto an entity of the orm class,
         defined for this loader class, interpreting the identifier as a UUID like identifier
 
         :param identifier: the UUID identifier
         :param classes: a tuple of orm classes to which the identifier should be mapped
+        :param backend: the storage backend to query; defaults to the storage of the currently loaded profile
         :returns: the query builder instance
         """
         from uuid import UUID
@@ -314,7 +340,7 @@ class OrmEntityLoader:
                 if len(uuid) > dash_pos:
                     uuid = f'{uuid[:dash_pos]}-{uuid[dash_pos:]}'
 
-        builder = QueryBuilder()
+        builder = QueryBuilder(backend=backend)
         builder.append(cls=classes, tag='entity', project=['*'])
 
         # If a UUID can be constructed from the identifier, it is a full UUID and the query can use an equality operator
@@ -329,7 +355,14 @@ class OrmEntityLoader:
 
     @classmethod
     def get_query_builder(
-        cls, identifier, identifier_type=None, sub_classes=None, query_with_dashes=True, operator='==', project='*'
+        cls,
+        identifier,
+        identifier_type=None,
+        sub_classes=None,
+        query_with_dashes=True,
+        operator='==',
+        project='*',
+        backend=None,
     ):
         """Return the query builder instance that attempts to map the identifier onto an entity of the orm class,
         defined for this loader class, inferring the identifier type if it is not defined.
@@ -340,6 +373,7 @@ class OrmEntityLoader:
             base orm class of the loader, that will narrow the queryset
         :param operator: the operator to use in the query
         :param project: the property or properties to project for entities matching the query
+        :param backend: the storage backend to query; defaults to the storage of the currently loaded profile
         :returns: the query builder instance and a dictionary of used query parameters
         """
         classes = cls.get_query_classes(sub_classes)
@@ -348,11 +382,11 @@ class OrmEntityLoader:
             identifier, identifier_type = cls.infer_identifier_type(identifier)
 
         if identifier_type == IdentifierType.ID:
-            builder = cls._get_query_builder_id_identifier(identifier, classes)
+            builder = cls._get_query_builder_id_identifier(identifier, classes, backend=backend)
         elif identifier_type == IdentifierType.UUID:
-            builder = cls._get_query_builder_uuid_identifier(identifier, classes, query_with_dashes)
+            builder = cls._get_query_builder_uuid_identifier(identifier, classes, query_with_dashes, backend=backend)
         elif identifier_type == IdentifierType.LABEL:
-            builder = cls._get_query_builder_label_identifier(identifier, classes, operator, project)
+            builder = cls._get_query_builder_label_identifier(identifier, classes, operator, project, backend=backend)
 
         query_parameters = {
             'classes': classes,
@@ -363,7 +397,7 @@ class OrmEntityLoader:
         return builder, query_parameters
 
     @classmethod
-    def get_options(cls, incomplete, project='*'):
+    def get_options(cls, incomplete, project='*', backend=None):
         """Return the list of entities that match the `incomplete` identifier.
 
         .. note:: For the time being only `LABEL` auto-completion is supported so the identifier type is not inferred
@@ -371,24 +405,30 @@ class OrmEntityLoader:
 
         :param incomplete: the incomplete identifier
         :param project: the field(s) to project for each entity that matches the incomplete identifier
+        :param backend: the storage backend to query; defaults to the storage of the currently loaded profile
         :return: list of entities matching the incomplete identifier
         """
-        builder, _ = cls.get_query_builder(incomplete, IdentifierType.LABEL, operator='like', project=project)
+        builder, _ = cls.get_query_builder(
+            incomplete, IdentifierType.LABEL, operator='like', project=project, backend=backend
+        )
         return builder.all()
 
     @classmethod
-    def load_entity(cls, identifier, identifier_type=None, sub_classes=None, query_with_dashes=True):
+    def load_entity(cls, identifier, identifier_type=None, sub_classes=None, query_with_dashes=True, backend=None):
         """Load an entity that uniquely corresponds to the provided identifier of the identifier type.
 
         :param identifier: the identifier
         :param identifier_type: the type of the identifier
         :param sub_classes: an optional tuple of orm classes, that should each be strict sub classes of the
             base orm class of the loader, that will narrow the queryset
+        :param backend: the storage backend to query; defaults to the storage of the currently loaded profile
         :returns: the loaded entity
         :raises aiida.common.MultipleObjectsError: if the identifier maps onto multiple entities
         :raises aiida.common.NotExistent: if the identifier maps onto not a single entity
         """
-        builder, query_parameters = cls.get_query_builder(identifier, identifier_type, sub_classes, query_with_dashes)
+        builder, query_parameters = cls.get_query_builder(
+            identifier, identifier_type, sub_classes, query_with_dashes, backend=backend
+        )
         builder.limit(2)
 
         classes = ' or '.join([sub_class.__name__ for sub_class in query_parameters['classes']])
@@ -503,7 +543,7 @@ class ProcessEntityLoader(OrmEntityLoader):
         return ProcessNode
 
     @classmethod
-    def _get_query_builder_label_identifier(cls, identifier, classes, operator='==', project='*'):
+    def _get_query_builder_label_identifier(cls, identifier, classes, operator='==', project='*', backend=None):
         """Return the query builder instance that attempts to map the identifier onto an entity of the orm class,
         defined for this loader class, interpreting the identifier as a LABEL like identifier
 
@@ -511,6 +551,7 @@ class ProcessEntityLoader(OrmEntityLoader):
         :param classes: a tuple of orm classes to which the identifier should be mapped
         :param operator: the operator to use in the query
         :param project: the property or properties to project for entities matching the query
+        :param backend: the storage backend to query; defaults to the storage of the currently loaded profile
         :returns: the query builder instance that should retrieve the entity corresponding to the identifier
         :raises ValueError: if the identifier is invalid
         :raises aiida.common.NotExistent: if the orm base class does not support a LABEL like identifier
@@ -520,7 +561,7 @@ class ProcessEntityLoader(OrmEntityLoader):
         if operator == 'like':
             identifier = f'{escape_for_sql_like(identifier)}%'
 
-        builder = QueryBuilder()
+        builder = QueryBuilder(backend=backend)
         builder.append(cls=classes, tag='process', project=project, filters={'label': {operator: identifier}})
 
         return builder
@@ -542,7 +583,7 @@ class CalculationEntityLoader(OrmEntityLoader):
         return CalculationNode
 
     @classmethod
-    def _get_query_builder_label_identifier(cls, identifier, classes, operator='==', project='*'):
+    def _get_query_builder_label_identifier(cls, identifier, classes, operator='==', project='*', backend=None):
         """Return the query builder instance that attempts to map the identifier onto an entity of the orm class,
         defined for this loader class, interpreting the identifier as a LABEL like identifier
 
@@ -550,6 +591,7 @@ class CalculationEntityLoader(OrmEntityLoader):
         :param classes: a tuple of orm classes to which the identifier should be mapped
         :param operator: the operator to use in the query
         :param project: the property or properties to project for entities matching the query
+        :param backend: the storage backend to query; defaults to the storage of the currently loaded profile
         :returns: the query builder instance that should retrieve the entity corresponding to the identifier
         :raises ValueError: if the identifier is invalid
         :raises aiida.common.NotExistent: if the orm base class does not support a LABEL like identifier
@@ -559,7 +601,7 @@ class CalculationEntityLoader(OrmEntityLoader):
         if operator == 'like':
             identifier = f'{escape_for_sql_like(identifier)}%'
 
-        builder = QueryBuilder()
+        builder = QueryBuilder(backend=backend)
         builder.append(cls=classes, tag='calculation', project=project, filters={'label': {operator: identifier}})
 
         return builder
@@ -581,7 +623,7 @@ class WorkflowEntityLoader(OrmEntityLoader):
         return WorkflowNode
 
     @classmethod
-    def _get_query_builder_label_identifier(cls, identifier, classes, operator='==', project='*'):
+    def _get_query_builder_label_identifier(cls, identifier, classes, operator='==', project='*', backend=None):
         """Return the query builder instance that attempts to map the identifier onto an entity of the orm class,
         defined for this loader class, interpreting the identifier as a LABEL like identifier
 
@@ -589,6 +631,7 @@ class WorkflowEntityLoader(OrmEntityLoader):
         :param classes: a tuple of orm classes to which the identifier should be mapped
         :param operator: the operator to use in the query
         :param project: the property or properties to project for entities matching the query
+        :param backend: the storage backend to query; defaults to the storage of the currently loaded profile
         :returns: the query builder instance that should retrieve the entity corresponding to the identifier
         :raises ValueError: if the identifier is invalid
         :raises aiida.common.NotExistent: if the orm base class does not support a LABEL like identifier
@@ -598,7 +641,7 @@ class WorkflowEntityLoader(OrmEntityLoader):
         if operator == 'like':
             identifier = f'{escape_for_sql_like(identifier)}%'
 
-        builder = QueryBuilder()
+        builder = QueryBuilder(backend=backend)
         builder.append(cls=classes, tag='workflow', project=project, filters={'label': {operator: identifier}})
 
         return builder
@@ -620,7 +663,7 @@ class CodeEntityLoader(OrmEntityLoader):
         return Code
 
     @classmethod
-    def _get_query_builder_label_identifier(cls, identifier, classes, operator='==', project='*'):
+    def _get_query_builder_label_identifier(cls, identifier, classes, operator='==', project='*', backend=None):
         """Return the query builder instance that attempts to map the identifier onto an entity of the orm class,
         defined for this loader class, interpreting the identifier as a LABEL like identifier
 
@@ -628,6 +671,7 @@ class CodeEntityLoader(OrmEntityLoader):
         :param classes: a tuple of orm classes to which the identifier should be mapped
         :param operator: the operator to use in the query
         :param project: the property or properties to project for entities matching the query
+        :param backend: the storage backend to query; defaults to the storage of the currently loaded profile
         :returns: the query builder instance that should retrieve the entity corresponding to the identifier
         :raises ValueError: if the identifier is invalid
         :raises aiida.common.NotExistent: if the orm base class does not support a LABEL like identifier
@@ -643,7 +687,7 @@ class CodeEntityLoader(OrmEntityLoader):
         if operator == 'like':
             identifier = f'{escape_for_sql_like(identifier)}%'
 
-        builder = QueryBuilder()
+        builder = QueryBuilder(backend=backend)
         builder.append(cls=classes, tag='code', project=project, filters={'label': {operator: identifier}})
 
         if machinename:
@@ -668,7 +712,7 @@ class ComputerEntityLoader(OrmEntityLoader):
         return Computer
 
     @classmethod
-    def _get_query_builder_label_identifier(cls, identifier, classes, operator='==', project='*'):
+    def _get_query_builder_label_identifier(cls, identifier, classes, operator='==', project='*', backend=None):
         """Return the query builder instance that attempts to map the identifier onto an entity of the orm class,
         defined for this loader class, interpreting the identifier as a LABEL like identifier
 
@@ -676,6 +720,7 @@ class ComputerEntityLoader(OrmEntityLoader):
         :param classes: a tuple of orm classes to which the identifier should be mapped
         :param operator: the operator to use in the query
         :param project: the property or properties to project for entities matching the query
+        :param backend: the storage backend to query; defaults to the storage of the currently loaded profile
         :returns: the query builder instance that should retrieve the entity corresponding to the identifier
         :raises ValueError: if the identifier is invalid
         :raises aiida.common.NotExistent: if the orm base class does not support a LABEL like identifier
@@ -685,7 +730,7 @@ class ComputerEntityLoader(OrmEntityLoader):
         if operator == 'like':
             identifier = f'{escape_for_sql_like(identifier)}%'
 
-        builder = QueryBuilder()
+        builder = QueryBuilder(backend=backend)
         builder.append(cls=classes, tag='computer', project=project, filters={'label': {operator: identifier}})
 
         return builder
@@ -707,7 +752,7 @@ class DataEntityLoader(OrmEntityLoader):
         return Data
 
     @classmethod
-    def _get_query_builder_label_identifier(cls, identifier, classes, operator='==', project='*'):
+    def _get_query_builder_label_identifier(cls, identifier, classes, operator='==', project='*', backend=None):
         """Return the query builder instance that attempts to map the identifier onto an entity of the orm class,
         defined for this loader class, interpreting the identifier as a LABEL like identifier
 
@@ -715,6 +760,7 @@ class DataEntityLoader(OrmEntityLoader):
         :param classes: a tuple of orm classes to which the identifier should be mapped
         :param operator: the operator to use in the query
         :param project: the property or properties to project for entities matching the query
+        :param backend: the storage backend to query; defaults to the storage of the currently loaded profile
         :returns: the query builder instance that should retrieve the entity corresponding to the identifier
         :raises ValueError: if the identifier is invalid
         :raises aiida.common.NotExistent: if the orm base class does not support a LABEL like identifier
@@ -724,7 +770,7 @@ class DataEntityLoader(OrmEntityLoader):
         if operator == 'like':
             identifier = f'{escape_for_sql_like(identifier)}%'
 
-        builder = QueryBuilder()
+        builder = QueryBuilder(backend=backend)
         builder.append(cls=classes, tag='calculation', project=project, filters={'label': {operator: identifier}})
 
         return builder
@@ -746,7 +792,7 @@ class GroupEntityLoader(OrmEntityLoader):
         return Group
 
     @classmethod
-    def _get_query_builder_label_identifier(cls, identifier, classes, operator='==', project='*'):
+    def _get_query_builder_label_identifier(cls, identifier, classes, operator='==', project='*', backend=None):
         """Return the query builder instance that attempts to map the identifier onto an entity of the orm class,
         defined for this loader class, interpreting the identifier as a LABEL like identifier
 
@@ -754,6 +800,7 @@ class GroupEntityLoader(OrmEntityLoader):
         :param classes: a tuple of orm classes to which the identifier should be mapped
         :param operator: the operator to use in the query
         :param project: the property or properties to project for entities matching the query
+        :param backend: the storage backend to query; defaults to the storage of the currently loaded profile
         :returns: the query builder instance that should retrieve the entity corresponding to the identifier
         :raises ValueError: if the identifier is invalid
         :raises aiida.common.NotExistent: if the orm base class does not support a LABEL like identifier
@@ -763,7 +810,7 @@ class GroupEntityLoader(OrmEntityLoader):
         if operator == 'like':
             identifier = f'{escape_for_sql_like(identifier)}%'
 
-        builder = QueryBuilder()
+        builder = QueryBuilder(backend=backend)
         builder.append(cls=classes, tag='group', project=project, filters={'label': {operator: identifier}})
 
         return builder
@@ -785,7 +832,7 @@ class NodeEntityLoader(OrmEntityLoader):
         return Node
 
     @classmethod
-    def _get_query_builder_label_identifier(cls, identifier, classes, operator='==', project='*'):
+    def _get_query_builder_label_identifier(cls, identifier, classes, operator='==', project='*', backend=None):
         """Return the query builder instance that attempts to map the identifier onto an entity of the orm class,
         defined for this loader class, interpreting the identifier as a LABEL like identifier
 
@@ -793,6 +840,7 @@ class NodeEntityLoader(OrmEntityLoader):
         :param classes: a tuple of orm classes to which the identifier should be mapped
         :param operator: the operator to use in the query
         :param project: the property or properties to project for entities matching the query
+        :param backend: the storage backend to query; defaults to the storage of the currently loaded profile
         :returns: the query builder instance that should retrieve the entity corresponding to the identifier
         :raises ValueError: if the identifier is invalid
         :raises aiida.common.NotExistent: if the orm base class does not support a LABEL like identifier
@@ -802,7 +850,7 @@ class NodeEntityLoader(OrmEntityLoader):
         if operator == 'like':
             identifier = f'{escape_for_sql_like(identifier)}%'
 
-        builder = QueryBuilder()
+        builder = QueryBuilder(backend=backend)
         builder.append(cls=classes, tag='node', project=project, filters={'label': {operator: identifier}})
 
         return builder

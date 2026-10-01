@@ -1,10 +1,13 @@
 """Tests for the :mod:`aiida.engine.processes.control` module."""
 
+from unittest import mock
+
 import pytest
 from plumpy.process_comms import RemoteProcessThreadController
 
-from aiida.engine import ProcessState
-from aiida.engine.launch import submit
+from aiida.common.exceptions import InvalidOperation
+from aiida.engine import Process, ProcessState, launch
+from aiida.engine.launch import run, submit
 from aiida.engine.processes import control
 from aiida.orm import Int
 from tests.utils.processes import WaitProcess
@@ -123,3 +126,131 @@ def test_revive(monkeypatch, aiida_code_installed, submit_and_await):
     # should timeout and raise an exception
     submit_and_await(node)
     assert node.is_finished_ok
+
+
+def make_mock_process(pk=1):
+    """Return a mock that satisfies the interface of a ``ProcessNode`` used by the control functions."""
+    process = mock.MagicMock(name=f'process<{pk}>')
+    process.pk = pk
+    process.is_terminated = False
+    return process
+
+
+class TestProcessControlManager:
+    """Test that the control functions use the explicitly passed ``manager`` instead of the global manager."""
+
+    @pytest.fixture
+    def mock_manager(self, monkeypatch):
+        """Return a mock manager and a spy on the module-level ``get_manager`` of the control module."""
+        manager = mock.MagicMock(name='manager')
+        manager.get_daemon_client.return_value.is_daemon_running = True
+
+        get_manager_spy = mock.MagicMock(name='get_manager')
+        monkeypatch.setattr(control, 'get_manager', get_manager_spy)
+
+        return manager, get_manager_spy
+
+    @pytest.mark.parametrize('action', (control.pause_processes, control.play_processes, control.kill_processes))
+    def test_explicit_manager_used(self, mock_manager, action):
+        """The action should go through the controller of the explicit manager and not consult the global manager."""
+        manager, get_manager_spy = mock_manager
+        process = make_mock_process()
+
+        action([process], timeout=None, manager=manager)
+
+        assert get_manager_spy.call_count == 0
+        controller = manager.get_process_controller.return_value
+        method = getattr(controller, f'{action.__name__.replace("_processes", "")}_process')
+        method.assert_called_once()
+
+    def test_explicit_manager_used_revive(self, mock_manager):
+        """``revive_processes`` should use the explicit manager and not consult the global manager."""
+        manager, get_manager_spy = mock_manager
+        process = make_mock_process()
+
+        control.revive_processes([process], manager=manager)
+
+        assert get_manager_spy.call_count == 0
+        manager.get_process_controller.return_value.continue_process.assert_called_once_with(
+            process.pk, nowait=True, no_reply=False
+        )
+
+    def test_explicit_manager_daemon_client(self, mock_manager):
+        """The daemon status check should use the daemon client of the explicit manager."""
+        manager, _ = mock_manager
+        manager.get_daemon_client.return_value.is_daemon_running = False
+        process = make_mock_process()
+
+        control.play_processes([process], timeout=None, manager=manager)
+
+        manager.get_daemon_client.assert_called_with()
+
+    def test_revive_raises_daemon_not_running(self, mock_manager):
+        """``revive_processes`` should raise if the daemon of the explicit manager is not running."""
+        manager, _ = mock_manager
+        manager.get_daemon_client.return_value.is_daemon_running = False
+
+        with pytest.raises(control.DaemonException, match='The daemon is not running'):
+            control.revive_processes([make_mock_process()], manager=manager)
+
+    @pytest.mark.parametrize('action', (control.pause_processes, control.play_processes, control.kill_processes))
+    def test_all_entries_uses_manager_storage(self, mock_manager, monkeypatch, action):
+        """With ``all_entries=True``, the query for active processes should use the storage of the explicit manager."""
+        manager, get_manager_spy = mock_manager
+        backend = manager.get_profile_storage.return_value
+
+        builder = mock.MagicMock(name='builder')
+        builder.all.return_value = []
+        construct = mock.MagicMock(return_value=builder)
+        monkeypatch.setattr(control, 'QueryBuilder', construct)
+
+        action(all_entries=True, manager=manager)
+
+        assert get_manager_spy.call_count == 0
+        manager.get_profile_storage.assert_called_with()
+        assert construct.call_args.kwargs['backend'] is backend
+
+
+class TestLaunchManager:
+    """Test that the ``launch`` functions correctly handle an explicitly passed ``manager``."""
+
+    def test_mismatched_runner_raises(self):
+        """Passing a process instance together with a manager that has a different runner should raise."""
+        runner = mock.MagicMock(name='runner')
+        process = mock.MagicMock(spec=Process, name='process-instance')
+        process.runner = runner
+
+        manager = mock.MagicMock(name='manager')
+        manager.runner = mock.MagicMock(name='other-runner')
+
+        with pytest.raises(InvalidOperation, match='bound to a different runner'):
+            run(process, manager=manager)
+
+        # When the runner of the process matches the runner of the manager, no error is raised and the runner of the
+        # process is used.
+        manager = mock.MagicMock(name='manager')
+        manager.runner = runner
+
+        assert launch._resolve_runner(process, manager) is runner
+
+    def test_runner_obtained_from_manager(self):
+        """For process classes, the runner should be obtained from the explicitly passed manager."""
+        process_cls = mock.MagicMock(name='process_class')
+        manager = mock.MagicMock(name='manager')
+        runner = manager.get_runner.return_value
+
+        run(process_cls, manager=manager)
+
+        manager.get_runner.assert_called_once_with()
+        runner.run.assert_called_once_with(process_cls, None)
+
+    def test_default_manager_fallback(self):
+        """Without an explicit manager, the global manager should be used."""
+        process_cls = mock.MagicMock(name='process_class')
+        get_manager_mock = mock.MagicMock(name='get_manager')
+
+        with mock.patch.object(launch.manager_module, 'get_manager', get_manager_mock):
+            run(process_cls)
+
+        get_manager_mock.assert_called_once_with()
+        get_manager_mock.return_value.get_runner.assert_called_once_with()
