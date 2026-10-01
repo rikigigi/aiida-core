@@ -29,7 +29,7 @@ from typing import TYPE_CHECKING
 
 import psutil
 
-from aiida.common.exceptions import AiidaException, ConfigurationError
+from aiida.common.exceptions import AiidaException, ConfigurationError, ProfileConfigurationError
 from aiida.common.lang import type_check
 from aiida.common.log import AIIDA_LOGGER
 from aiida.manage.configuration import get_config, get_config_option
@@ -233,7 +233,14 @@ class DaemonClient:
         self._config = get_config()
         self._profile = profile
         self._socket_directory: str | None = None
-        self._daemon_timeout: int = self._config.get_option('daemon.timeout', scope=profile.name)
+        try:
+            self._daemon_timeout: int = self._config.get_option('daemon.timeout', scope=profile.name)
+        except ProfileConfigurationError:
+            # The profile is not registered in the configuration, e.g., a `Profile` instance that was created
+            # programmatically and loaded on a custom `Manager` instance. Fall back to the profile's own options,
+            # defaulting to the option's default value if not defined.
+            default = self._config.get_option('daemon.timeout')
+            self._daemon_timeout = profile.get_option('daemon.timeout', default)
 
     @property
     def profile(self) -> Profile:
