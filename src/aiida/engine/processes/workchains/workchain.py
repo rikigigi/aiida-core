@@ -35,6 +35,7 @@ from .awaitable import Awaitable, AwaitableAction, AwaitableTarget, construct_aw
 
 if t.TYPE_CHECKING:
     from aiida.engine.runners import Runner
+    from aiida.orm.implementation import StorageBackend
 
 __all__ = ('WorkChain', 'if_', 'return_', 'while_')
 
@@ -113,6 +114,7 @@ class WorkChain(Process, metaclass=Protect):
         logger: logging.Logger | None = None,
         runner: Runner | None = None,
         enable_persistence: bool = True,
+        backend: StorageBackend | None = None,
     ) -> None:
         """Construct a WorkChain instance.
 
@@ -122,12 +124,14 @@ class WorkChain(Process, metaclass=Protect):
         :param logger: aiida logger
         :param runner: work chain runner
         :param enable_persistence: whether to persist this work chain
+        :param backend: the storage backend to use when creating the process node. If ``None``, the storage of the
+            currently loaded profile is used.
 
         """
         if self.__class__ == WorkChain:
             raise exceptions.InvalidOperation('cannot construct or launch a base `WorkChain` class.')
 
-        super().__init__(inputs, logger, runner, enable_persistence=enable_persistence)
+        super().__init__(inputs, logger, runner, enable_persistence=enable_persistence, backend=backend)
 
         self._stepper: Stepper | None = None
         self._awaitables: list[Awaitable] = []

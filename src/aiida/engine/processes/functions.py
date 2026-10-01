@@ -485,8 +485,8 @@ class FunctionProcess(Process):
         return inputs
 
     @classmethod
-    def get_or_create_db_record(cls) -> ProcessNode:
-        return cls._node_class()
+    def get_or_create_db_record(cls, backend=None) -> ProcessNode:
+        return cls._node_class(backend=backend)
 
     def __init__(self, *args, **kwargs) -> None:
         if kwargs.get('enable_persistence', False):

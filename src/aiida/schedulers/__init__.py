@@ -23,6 +23,7 @@ __all__ = (
     'JobState',
     'JobTemplate',
     'MachineInfo',
+    'NodeNumberGpuJobResource',
     'NodeNumberJobResource',
     'ParEnvJobResource',
     'Scheduler',

@@ -22,6 +22,7 @@ from plumpy import get_or_create_event_loop
 
 if TYPE_CHECKING:
     from aiida.orm import ProcessNode
+    from aiida.orm.implementation import StorageBackend
 
     from .processes import Process, ProcessBuilder
     from .runners import Runner
@@ -53,7 +54,12 @@ def prepare_inputs(inputs: dict[str, Any] | None = None, **kwargs: Any) -> dict[
     return inputs or {}
 
 
-def instantiate_process(runner: Runner, process: Process | type[Process] | ProcessBuilder, **inputs) -> Process:
+def instantiate_process(
+    runner: 'Runner',
+    process: Process | type[Process] | ProcessBuilder,
+    backend: 'StorageBackend' | None = None,
+    **inputs,
+) -> 'Process':
     """Return an instance of the process with the given inputs. The function can deal with various types
     of the `process`:
 
@@ -64,6 +70,8 @@ def instantiate_process(runner: Runner, process: Process | type[Process] | Proce
     If anything else is passed, a ValueError will be raised
 
     :param process: Process instance or class, CalcJobNode class or ProcessBuilder instance
+    :param backend: the storage backend to use when creating the process node. If ``None``, the storage of the
+        currently loaded profile is used.
     :param inputs: the inputs for the process to be instantiated with
     """
     from .processes import Process, ProcessBuilder
@@ -84,7 +92,7 @@ def instantiate_process(runner: Runner, process: Process | type[Process] | Proce
     else:
         raise ValueError(f'invalid process {type(process)}, needs to be Process or ProcessBuilder')
 
-    process = process_class(runner=runner, inputs=inputs)
+    process = process_class(runner=runner, inputs=inputs, backend=backend)
 
     return process
 

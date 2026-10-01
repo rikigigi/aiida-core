@@ -8,6 +8,8 @@
 ###########################################################################
 """Module to test orm utilities to load nodes, codes etc."""
 
+from unittest import mock
+
 import pytest
 
 from aiida.common.exceptions import NotExistent
@@ -213,3 +215,60 @@ class TestOrmUtils:
 
         with pytest.raises(NotExistent):
             load_group('non-existent-uuid')
+
+
+class TestLoaderBackend:
+    """Test that the loader functions and classes correctly forward an explicitly passed storage ``backend``."""
+
+    @pytest.mark.parametrize(
+        'loader, kwargs',
+        (
+            (load_node, {'pk': 1}),
+            (load_node, {'uuid': 'aaaa'}),
+            (load_node, {'label': 'some-label'}),
+            (load_code, {'label': 'some-code'}),
+            (load_computer, {'label': 'some-computer'}),
+            (load_group, {'label': 'some-group'}),
+            (load_entity, {'entity_loader': NodeEntityLoader, 'pk': 1}),
+        ),
+    )
+    def test_backend_forwarded_to_query_builder(self, monkeypatch, loader, kwargs):
+        """The loader entry points should construct the ``QueryBuilder`` with the explicitly passed backend."""
+        backend = mock.MagicMock(name='backend')
+        builder = mock.MagicMock(name='builder')
+        builder.one.return_value = [mock.MagicMock(name='entity')]
+
+        construct = mock.MagicMock(return_value=builder)
+        monkeypatch.setattr('aiida.orm.utils.loaders.QueryBuilder', construct)
+
+        loader(backend=backend, **kwargs)
+
+        assert construct.call_count == 1
+        assert construct.call_args.kwargs['backend'] is backend
+
+    def test_get_options_backend(self, monkeypatch):
+        """``OrmEntityLoader.get_options`` should construct the ``QueryBuilder`` with the explicitly passed backend."""
+        backend = mock.MagicMock(name='backend')
+        builder = mock.MagicMock(name='builder')
+        builder.all.return_value = []
+
+        construct = mock.MagicMock(return_value=builder)
+        monkeypatch.setattr('aiida.orm.utils.loaders.QueryBuilder', construct)
+
+        NodeEntityLoader.get_options('incomplete', backend=backend)
+
+        assert construct.call_count == 1
+        assert construct.call_args.kwargs['backend'] is backend
+
+    def test_backend_defaults_to_none(self, monkeypatch):
+        """Without an explicit backend, the loader should construct the ``QueryBuilder`` with ``backend=None``."""
+        builder = mock.MagicMock(name='builder')
+        builder.one.return_value = [mock.MagicMock(name='entity')]
+
+        construct = mock.MagicMock(return_value=builder)
+        monkeypatch.setattr('aiida.orm.utils.loaders.QueryBuilder', construct)
+
+        load_node(pk=1)
+
+        assert construct.call_count == 1
+        assert construct.call_args.kwargs['backend'] is None

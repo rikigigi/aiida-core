@@ -16,14 +16,17 @@ import typing as t
 from aiida.common import InvalidOperation
 from aiida.common.lang import type_check
 from aiida.common.log import AIIDA_LOGGER
-from aiida.manage import manager
+from aiida.manage import manager as manager_module
 from aiida.orm import ProcessNode
 
 from .processes.builder import ProcessBuilder
 from .processes.functions import FunctionProcess
 from .processes.process import Process
-from .runners import ResultAndPk
+from .runners import ResultAndPk, Runner
 from .utils import instantiate_process, is_process_scoped, prepare_inputs
+
+if t.TYPE_CHECKING:
+    from aiida.manage.manager import Manager
 
 __all__ = ('await_processes', 'run', 'run_get_node', 'run_get_pk', 'submit')
 
@@ -33,52 +36,96 @@ TYPE_SUBMIT_PROCESS = Process | type[Process] | ProcessBuilder
 LOGGER = AIIDA_LOGGER.getChild('engine.launch')
 
 
-def run(process: TYPE_RUN_PROCESS, inputs: dict[str, t.Any] | None = None, **kwargs: t.Any) -> dict[str, t.Any]:
+def _resolve_runner(process: TYPE_RUN_PROCESS, manager: Manager | None, *, broker_submit: bool = False) -> Runner:
+    """Resolve the runner to use for the given process and manager.
+
+    If the process is an already constructed :class:`~aiida.engine.processes.process.Process` instance, its runner is
+    used. In this case, if an explicit ``manager`` is provided that already has a runner and it does not match the
+    runner of the process, an :class:`~aiida.common.exceptions.InvalidOperation` is raised instead of silently
+    ignoring either one. Otherwise, the runner is obtained from the manager, defaulting to the global manager.
+
+    :param process: the process to be launched
+    :param manager: the manager to use; if ``None``, the global manager returned by
+        :func:`aiida.manage.manager.get_manager` is used
+    :param broker_submit: whether the runner is required for a ``submit``, in which case the runner of the manager is
+        returned since it needs the process controller to submit the process to the broker
+    :return: the resolved runner
+    :raises aiida.common.exceptions.InvalidOperation: if the process is an instance that is bound to a different
+        runner than the one of the explicitly provided manager
+    """
+    if isinstance(process, Process):
+        runner = process.runner
+        if manager is not None and manager.runner is not None and runner is not manager.runner:
+            raise InvalidOperation(
+                'the `process` instance is bound to a different runner than the one of the provided `manager`.'
+            )
+        return runner
+
+    manager = manager or manager_module.get_manager()
+
+    if broker_submit:
+        return manager.get_runner()
+
+    # Note: it is safe to create new local runner here without but the explanation can be found in issue #7353
+    return manager.create_runner(communicator=None)
+
+
+def run(
+    process: TYPE_RUN_PROCESS,
+    inputs: dict[str, t.Any] | None = None,
+    *,
+    manager: Manager | None = None,
+    **kwargs: t.Any,
+) -> dict[str, t.Any]:
     """Run the process with the supplied inputs in a local runner that will block until the process is completed.
 
     :param process: the process class or process function to run
     :param inputs: the inputs to be passed to the process
+    :param manager: the manager whose runner is used to run the process; defaults to the global manager returned by
+        :func:`aiida.manage.manager.get_manager`
     :return: the outputs of the process
     """
-    if isinstance(process, Process):
-        runner = process.runner
-    else:
-        # Note: it is safe to create new local runner here without but the explanation can be found in issue #7353
-        runner = manager.get_manager().create_runner(communicator=None)
+    runner = _resolve_runner(process, manager)
 
     return runner.run(process, inputs, **kwargs)
 
 
 def run_get_node(
-    process: TYPE_RUN_PROCESS, inputs: dict[str, t.Any] | None = None, **kwargs: t.Any
+    process: TYPE_RUN_PROCESS,
+    inputs: dict[str, t.Any] | None = None,
+    *,
+    manager: Manager | None = None,
+    **kwargs: t.Any,
 ) -> tuple[dict[str, t.Any], ProcessNode]:
     """Run the process with the supplied inputs in a local runner that will block until the process is completed.
 
     :param process: the process class, instance, builder or function to run
     :param inputs: the inputs to be passed to the process
+    :param manager: the manager whose runner is used to run the process; defaults to the global manager returned by
+        :func:`aiida.manage.manager.get_manager`
     :return: tuple of the outputs of the process and the process node
     """
-    if isinstance(process, Process):
-        runner = process.runner
-    else:
-        # Note: it is safe to create new local runner here without but the explanation can be found in issue #7353
-        runner = manager.get_manager().create_runner(communicator=None)
+    runner = _resolve_runner(process, manager)
 
     return runner.run_get_node(process, inputs, **kwargs)
 
 
-def run_get_pk(process: TYPE_RUN_PROCESS, inputs: dict[str, t.Any] | None = None, **kwargs: t.Any) -> ResultAndPk:
+def run_get_pk(
+    process: TYPE_RUN_PROCESS,
+    inputs: dict[str, t.Any] | None = None,
+    *,
+    manager: Manager | None = None,
+    **kwargs: t.Any,
+) -> ResultAndPk:
     """Run the process with the supplied inputs in a local runner that will block until the process is completed.
 
     :param process: the process class, instance, builder or function to run
     :param inputs: the inputs to be passed to the process
+    :param manager: the manager whose runner is used to run the process; defaults to the global manager returned by
+        :func:`aiida.manage.manager.get_manager`
     :return: tuple of the outputs of the process and process node pk
     """
-    if isinstance(process, Process):
-        runner = process.runner
-    else:
-        # Note: it is safe to create new local runner here without but the explanation can be found in issue #7353
-        runner = manager.get_manager().create_runner(communicator=None)
+    runner = _resolve_runner(process, manager)
 
     return runner.run_get_pk(process, inputs, **kwargs)
 
@@ -89,6 +136,7 @@ def submit(
     *,
     wait: bool = False,
     wait_interval: int = 5,
+    manager: Manager | None = None,
     **kwargs: t.Any,
 ) -> ProcessNode:
     """Submit the process with the supplied inputs to the daemon immediately returning control to the interpreter.
@@ -103,6 +151,9 @@ def submit(
     :param wait: when set to ``True``, the submission will be blocking and wait for the process to complete at which
         point the function returns the calculation node.
     :param wait_interval: the number of seconds to wait between checking the state of the process when ``wait=True``.
+    :param manager: the manager whose runner is used to submit the process. If specified explicitly, the process node
+        is also created in the storage of that manager's profile. Defaults to the global manager returned by
+        :func:`aiida.manage.manager.get_manager`.
     :param kwargs: inputs to be passed to the process. This is an alternative to the positional ``inputs`` argument.
     :return: the calculation node of the process
     """
@@ -124,10 +175,10 @@ def submit(
     else:
         merged_inputs = inputs
     if (merged_inputs.get('metadata') or {}).get('dry_run', False) or 'remote_folder' in merged_inputs:
-        _, node = run_get_node(process, inputs)
+        _, node = run_get_node(process, inputs, manager=manager)
         return node
 
-    current_manager = manager.get_manager()
+    current_manager = manager or manager_module.get_manager()
     profile = current_manager.get_profile()
 
     if profile is not None and profile.process_control_backend == 'core.zeromq':
@@ -143,7 +194,7 @@ def submit(
             )
             raise InvalidOperation(msg)
 
-    runner = current_manager.get_runner()
+    runner = _resolve_runner(process, manager, broker_submit=True)
 
     if runner.controller is None:
         raise InvalidOperation(
@@ -157,7 +208,10 @@ def submit(
 
     assert runner.persister is not None, 'runner does not have a persister'
 
-    process_inited = instantiate_process(runner, process, **inputs)
+    # If a manager was explicitly provided, ensure the process node is created in the storage of its profile. When no
+    # manager is provided, the backend is left unspecified to preserve the existing lazy-loading behavior.
+    backend = manager.get_profile_storage() if manager is not None else None
+    process_inited = instantiate_process(runner, process, backend=backend, **inputs)
 
     if not process_inited.metadata.store_provenance:
         raise InvalidOperation('cannot submit a process with `store_provenance=False`')

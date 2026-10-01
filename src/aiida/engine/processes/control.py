@@ -14,10 +14,14 @@ from plumpy.futures import unwrap_kiwi_future
 from aiida.brokers import Broker
 from aiida.common.exceptions import AiidaException
 from aiida.common.log import AIIDA_LOGGER
-from aiida.engine.daemon.client import DaemonException, get_daemon_client
+from aiida.engine.daemon.client import DaemonException
 from aiida.manage.manager import get_manager
 from aiida.orm import ProcessNode, QueryBuilder
 from aiida.tools.query.calculation import CalculationQueryBuilder
+
+if t.TYPE_CHECKING:
+    from aiida.manage.manager import Manager
+    from aiida.orm.implementation import StorageBackend
 
 LOGGER = AIIDA_LOGGER.getChild('process_control')
 
@@ -26,15 +30,18 @@ class ProcessTimeoutException(AiidaException):
     """Raised when action to communicate with a process times out."""
 
 
-def get_active_processes(paused: bool = False, project: str | list[str] = '*') -> list[ProcessNode] | list[t.Any]:
+def get_active_processes(
+    paused: bool = False, project: str | list[str] = '*', *, backend: StorageBackend | None = None
+) -> list[ProcessNode] | list[t.Any]:
     """Return all active processes, i.e., those with a process state of created, waiting or running.
 
     :param paused: Boolean, if True, filter for processes that are paused.
     :param project: Single or list of properties to project. By default projects the entire node.
+    :param backend: The storage backend to query. If ``None``, the storage of the currently loaded profile is used.
     :return: A list of process nodes of active processes.
     """
     filters = CalculationQueryBuilder().get_filters(process_state=('created', 'waiting', 'running'), paused=paused)
-    builder = QueryBuilder().append(ProcessNode, filters=filters, project=project)
+    builder = QueryBuilder(backend=backend).append(ProcessNode, filters=filters, project=project)
     return builder.all(flat=True)
 
 
@@ -62,7 +69,7 @@ def get_process_tasks(broker: Broker) -> list[int]:
     return pks
 
 
-def revive_processes(processes: list[ProcessNode], *, wait: bool = False) -> None:
+def revive_processes(processes: list[ProcessNode], *, wait: bool = False, manager: Manager | None = None) -> None:
     """Revive processes that seem stuck and are no longer reachable.
 
     Warning: Use only as a last resort after you've gone through the checklist below.
@@ -80,11 +87,15 @@ def revive_processes(processes: list[ProcessNode], *, wait: bool = False) -> Non
 
     :param processes: List of processes to revive.
     :param wait: Set to ``True`` to wait for a response, for ``False`` the action is fire-and-forget.
+    :param manager: The manager whose daemon client and process controller to use. If ``None``, the global manager
+        returned by :func:`aiida.manage.manager.get_manager` is used.
     """
-    if not get_daemon_client().is_daemon_running:
+    manager = manager or get_manager()
+
+    if not manager.get_daemon_client().is_daemon_running:
         raise DaemonException('The daemon is not running.')
 
-    process_controller = get_manager().get_process_controller()
+    process_controller = manager.get_process_controller()
 
     for process in processes:
         future = process_controller.continue_process(process.pk, nowait=not wait, no_reply=False)
@@ -103,7 +114,11 @@ def revive_processes(processes: list[ProcessNode], *, wait: bool = False) -> Non
 
 
 def play_processes(
-    processes: list[ProcessNode] | None = None, *, all_entries: bool = False, timeout: float = 5.0
+    processes: list[ProcessNode] | None = None,
+    *,
+    all_entries: bool = False,
+    timeout: float = 5.0,
+    manager: Manager | None = None,
 ) -> None:
     """Play (unpause) paused processes.
 
@@ -112,22 +127,26 @@ def play_processes(
     :param processes: List of processes to play.
     :param all_entries: Play all paused processes.
     :param timeout: Raise a ``ProcessTimeoutException`` if the process does not respond within this amount of seconds.
+    :param manager: The manager whose daemon client and process controller to use. If ``None``, the global manager
+        returned by :func:`aiida.manage.manager.get_manager` is used.
     :raises ``ProcessTimeoutException``: If the processes do not respond within the timeout.
     """
-    if not get_daemon_client().is_daemon_running:
+    manager = manager or get_manager()
+
+    if not manager.get_daemon_client().is_daemon_running:
         LOGGER.warning('The daemon is not running, so processes submitted to the daemon are not reachable.')
 
     if processes and all_entries:
         raise ValueError('cannot specify processes when `all_entries = True`.')
 
     if not processes and all_entries:
-        processes = get_active_processes(paused=True)
+        processes = get_active_processes(paused=True, backend=manager.get_profile_storage())
 
     if not processes:
         LOGGER.report('no active processes selected.')
         return
 
-    controller = get_manager().get_process_controller()
+    controller = manager.get_process_controller()
     _perform_actions(processes, controller.play_process, 'play', 'playing', timeout)
 
 
@@ -137,6 +156,7 @@ def pause_processes(
     msg_text: str = 'Paused through `aiida.engine.processes.control.pause_processes`',
     all_entries: bool = False,
     timeout: float = 5.0,
+    manager: Manager | None = None,
 ) -> None:
     """Pause running processes.
 
@@ -145,22 +165,26 @@ def pause_processes(
     :param processes: List of processes to play.
     :param all_entries: Pause all playing processes.
     :param timeout: Raise a ``ProcessTimeoutException`` if the process does not respond within this amount of seconds.
+    :param manager: The manager whose daemon client and process controller to use. If ``None``, the global manager
+        returned by :func:`aiida.manage.manager.get_manager` is used.
     :raises ``ProcessTimeoutException``: If the processes do not respond within the timeout.
     """
-    if not get_daemon_client().is_daemon_running:
+    manager = manager or get_manager()
+
+    if not manager.get_daemon_client().is_daemon_running:
         LOGGER.warning('The daemon is not running, so processes submitted to the daemon are not reachable.')
 
     if processes and all_entries:
         raise ValueError('cannot specify processes when `all_entries = True`.')
 
     if not processes and all_entries:
-        processes = get_active_processes()
+        processes = get_active_processes(backend=manager.get_profile_storage())
 
     if not processes:
         LOGGER.report('no active processes selected.')
         return
 
-    controller = get_manager().get_process_controller()
+    controller = manager.get_process_controller()
     action = functools.partial(controller.pause_process, msg_text=msg_text)
     _perform_actions(processes, action, 'pause', 'pausing', timeout)
 
@@ -172,6 +196,7 @@ def kill_processes(
     force: bool = False,
     all_entries: bool = False,
     timeout: float = 5.0,
+    manager: Manager | None = None,
 ) -> None:
     """Kill running processes.
 
@@ -180,22 +205,26 @@ def kill_processes(
     :param processes: List of processes to play.
     :param all_entries: Kill all active processes.
     :param timeout: Raise a ``ProcessTimeoutException`` if the process does not respond within this amount of seconds.
+    :param manager: The manager whose daemon client and process controller to use. If ``None``, the global manager
+        returned by :func:`aiida.manage.manager.get_manager` is used.
     :raises ``ProcessTimeoutException``: If the processes do not respond within the timeout.
     """
-    if not get_daemon_client().is_daemon_running:
+    manager = manager or get_manager()
+
+    if not manager.get_daemon_client().is_daemon_running:
         LOGGER.warning('The daemon is not running, so processes submitted to the daemon are not reachable.')
 
     if processes and all_entries:
         raise ValueError('cannot specify processes when `all_entries = True`.')
 
     if not processes and all_entries:
-        processes = get_active_processes()
+        processes = get_active_processes(backend=manager.get_profile_storage())
 
     if not processes:
         LOGGER.report('no active processes selected.')
         return
 
-    controller = get_manager().get_process_controller()
+    controller = manager.get_process_controller()
     action = functools.partial(controller.kill_process, msg_text=msg_text, force_kill=force)
     _perform_actions(processes, action, 'kill', 'killing', timeout)
 
