@@ -10,7 +10,9 @@
 
 from __future__ import annotations
 
+import functools
 import typing as t
+from importlib import import_module
 from importlib.metadata import version, packages_distributions
 from logging import Logger
 from types import FunctionType
@@ -25,6 +27,16 @@ __all__ = ('PluginVersionProvider',)
 KEY_VERSION_ROOT: str = 'version'
 KEY_VERSION_CORE: str = 'core'  # The version of `aiida-core`
 KEY_VERSION_PLUGIN: str = 'plugin'  # The version of the plugin top level module, e.g. `aiida-quantumespresso`
+
+
+@functools.lru_cache(maxsize=1)
+def _cached_packages_distributions() -> dict[str, list[str]]:
+    """Return the mapping of top-level module names to the distributions providing them.
+
+    The mapping is cached because ``packages_distributions`` scans the metadata of the entire environment, which is
+    expensive, and the result can change at most once per interpreter process.
+    """
+    return packages_distributions()
 
 
 class PluginVersionProvider:
@@ -86,10 +98,21 @@ class PluginVersionProvider:
             return self._cache[plugin]
 
         try:
-            version_plugin = version(packages_distributions()[parent_module_name][0])
-        except (ImportError,AttributeError, ModuleNotFoundError, KeyError):
-            self.logger.debug(f'cannot determine version for plugin: {plugin}')
-            return self._cache[plugin]
+            version_plugin = version(_cached_packages_distributions()[parent_module_name][0])
+        except (ImportError, AttributeError, ModuleNotFoundError, KeyError):
+            # The plugin's top level module is not provided by an installed distribution, for example for an editable
+            # install or a dynamically created module. Fall back to the ``__version__`` module attribute.
+            try:
+                parent_module = import_module(parent_module_name)
+            except (AttributeError, IndexError, ImportError):
+                self.logger.debug(f'could not determine the top level module for plugin: {plugin}')
+                return self._cache[plugin]
+
+            try:
+                version_plugin = parent_module.__version__
+            except AttributeError:
+                self.logger.debug(f'parent module does not define `__version__` attribute for plugin: {plugin}')
+                return self._cache[plugin]
 
         self._cache[plugin][KEY_VERSION_ROOT][KEY_VERSION_PLUGIN] = version_plugin
 
