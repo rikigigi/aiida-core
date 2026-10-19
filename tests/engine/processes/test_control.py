@@ -237,11 +237,13 @@ class TestLaunchManager:
         """For process classes, the runner should be obtained from the explicitly passed manager."""
         process_cls = mock.MagicMock(name='process_class')
         manager = mock.MagicMock(name='manager')
-        runner = manager.get_runner.return_value
+        runner = manager.create_runner.return_value
 
         run(process_cls, manager=manager)
 
-        manager.get_runner.assert_called_once_with()
+        # Upstream changed `run` to create a new local runner without a communicator, see issue #7353.
+        manager.create_runner.assert_called_once_with(communicator=None)
+        manager.get_runner.assert_not_called()
         runner.run.assert_called_once_with(process_cls, None)
 
     def test_default_manager_fallback(self):
@@ -253,4 +255,6 @@ class TestLaunchManager:
             run(process_cls)
 
         get_manager_mock.assert_called_once_with()
-        get_manager_mock.return_value.get_runner.assert_called_once_with()
+        # Upstream changed `run` to create a new local runner without a communicator, see issue #7353.
+        get_manager_mock.return_value.create_runner.assert_called_once_with(communicator=None)
+        get_manager_mock.return_value.get_runner.assert_not_called()

@@ -147,7 +147,7 @@ def play_processes(
         return
 
     controller = manager.get_process_controller()
-    _perform_actions(processes, controller.play_process, 'play', 'playing', timeout)
+    _perform_actions(processes, controller.play_process, 'play', 'playing', timeout, manager)
 
 
 def pause_processes(
@@ -186,7 +186,7 @@ def pause_processes(
 
     controller = manager.get_process_controller()
     action = functools.partial(controller.pause_process, msg_text=msg_text)
-    _perform_actions(processes, action, 'pause', 'pausing', timeout)
+    _perform_actions(processes, action, 'pause', 'pausing', timeout, manager)
 
 
 def kill_processes(
@@ -226,7 +226,7 @@ def kill_processes(
 
     controller = manager.get_process_controller()
     action = functools.partial(controller.kill_process, msg_text=msg_text, force_kill=force)
-    _perform_actions(processes, action, 'kill', 'killing', timeout)
+    _perform_actions(processes, action, 'kill', 'killing', timeout, manager)
 
 
 def _perform_actions(
@@ -235,6 +235,7 @@ def _perform_actions(
     infinitive: str,
     present: str,
     timeout: float | None = None,
+    manager: Manager | None = None,
     **kwargs: t.Any,
 ) -> None:
     """Perform an action on a list of processes.
@@ -268,7 +269,7 @@ def _perform_actions(
     # End the current read transaction so that subsequent attribute reads see
     # the state committed by the daemon.  Without this, SQLite's transaction
     # snapshot isolation can cause stale reads after the RPC round-trip.
-    storage = get_manager().get_profile_storage()
+    storage = (manager or get_manager()).get_profile_storage()
     if hasattr(storage, 'get_session'):
         storage.get_session().commit()
 

@@ -364,29 +364,28 @@ class TestScpEscaping:
 
     def test_escape_for_scp_version_aware(self, openssh_backend):
         """Test _escape_for_scp behavior differs by OpenSSH version."""
-        get_openssh_version.cache_clear()
         path = '/path/with spaces'
 
-        with patch('aiida.transports.plugins.async_backend.is_openssh_9_or_higher', return_value=True):
-            assert openssh_backend._escape_for_scp(path) == path  # SFTP: no escaping
+        openssh_backend.is_openssh_9_or_higher = True
+        assert openssh_backend._escape_for_scp(path) == path  # SFTP: no escaping
 
-        with patch('aiida.transports.plugins.async_backend.is_openssh_9_or_higher', return_value=False):
-            assert openssh_backend._escape_for_scp(path) == '/path/with\\ spaces'  # RCP: escaped
+        openssh_backend.is_openssh_9_or_higher = False
+        assert openssh_backend._escape_for_scp(path) == '/path/with\\ spaces'  # RCP: escaped
 
     def test_escape_for_scp_with_O_flag(self, openssh_backend):
         """Test that -O flag forces RCP escaping regardless of OpenSSH version."""
         path = '/path/with (parentheses)'
-        
+
         # Set scp_command to include -O flag
         openssh_backend.scp_command = ['scp', '-O']
-        
+
         # Even with OpenSSH 9+, -O flag should force escaping
-        with patch('aiida.transports.plugins.async_backend.is_openssh_9_or_higher', return_value=True):
-            assert openssh_backend._escape_for_scp(path) == r'/path/with\ \(parentheses\)'  # RCP: escaped
+        openssh_backend.is_openssh_9_or_higher = True
+        assert openssh_backend._escape_for_scp(path) == r'/path/with\ \(parentheses\)'  # RCP: escaped
 
         # With OpenSSH < 9, -O flag should also force escaping
-        with patch('aiida.transports.plugins.async_backend.is_openssh_9_or_higher', return_value=False):
-            assert openssh_backend._escape_for_scp(path) == r'/path/with\ \(parentheses\)'  # RCP: escaped
+        openssh_backend.is_openssh_9_or_higher = False
+        assert openssh_backend._escape_for_scp(path) == r'/path/with\ \(parentheses\)'  # RCP: escaped
 
 
 def test_escape_for_scp_version_aware():

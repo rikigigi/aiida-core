@@ -176,7 +176,7 @@ class ProcessNode(Sealable, Node):
 
     @classproperty
     def _hash_ignored_attributes(cls) -> tuple[str, ...]:  # noqa: N805
-        return super()._hash_ignored_attributes + ('metadata_inputs',)
+        return super()._hash_ignored_attributes + ('metadata_inputs', '_root_id')
 
     @classproperty
     def _updatable_attributes(cls) -> tuple[str, ...]:  # noqa: N805
